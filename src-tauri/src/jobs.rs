@@ -125,6 +125,9 @@ pub struct DownloadRequest {
     pub group_title: Option<String>,
     #[serde(default)]
     pub options: DownloadOptions,
+    /// Length in seconds when known at queue time (for the library).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
 }
 
 impl DownloadRequest {
@@ -949,6 +952,7 @@ mod tests {
             group_id: None,
             group_title: None,
             options: DownloadOptions::default(),
+            duration: None,
         }
     }
 

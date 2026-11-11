@@ -11,7 +11,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::{
     AppState,
     error::{AppError, AppResult},
-    jobs,
+    jobs, library,
     settings::{self, Settings},
     toolmgr,
     tools::{self, ToolStatus},
@@ -24,8 +24,20 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
 }
 
 #[tauri::command]
-pub async fn update_settings(state: State<'_, AppState>, patch: Map<String, Value>) -> AppResult<Settings> {
-    settings::update(&state.db, &state.default_settings, patch)
+pub async fn update_settings(app: AppHandle, state: State<'_, AppState>, patch: Map<String, Value>) -> AppResult<Settings> {
+    let s = settings::update(&state.db, &state.default_settings, patch)?;
+    library::allow_folders(&app, &s); // new folders become playable right away
+    Ok(s)
+}
+
+#[tauri::command]
+pub async fn video_library(app: AppHandle, state: State<'_, AppState>) -> AppResult<Vec<library::VideoItem>> {
+    library::videos(&app, &state.db)
+}
+
+#[tauri::command]
+pub async fn save_watch_position(state: State<'_, AppState>, job_id: String, position: f64, duration: Option<f64>) -> AppResult<()> {
+    library::save_position(&state.db, &job_id, position, duration)
 }
 
 #[derive(Serialize)]

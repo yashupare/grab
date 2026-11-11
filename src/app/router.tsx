@@ -2,7 +2,9 @@ import { createRootRoute, createRoute, createRouter } from "@tanstack/react-rout
 import { AppShell } from "./AppShell";
 import { HomePage } from "../pages/HomePage";
 import { LinkPage } from "../pages/LinkPage";
-import { ActivityPage, MusicPage, NotFoundPage, ToolsPage, VideosPage } from "../pages/PlaceholderPages";
+import { ActivityPage, MusicPage, NotFoundPage, ToolsPage } from "../pages/PlaceholderPages";
+import { VideosPage } from "../pages/VideosPage";
+import { VideoPlayerPage } from "../pages/VideoPlayerPage";
 import { SETTINGS_SECTIONS, SettingsPage, type SettingsSection } from "../pages/SettingsPage";
 import { ErrorPage } from "../pages/ErrorPage";
 
@@ -29,6 +31,7 @@ const routes = [
     component: MusicPage,
   }),
   createRoute({ getParentRoute: () => rootRoute, path: "/videos", component: VideosPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/videos/$id", component: VideoPlayerPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tools", component: ToolsPage }),
   createRoute({
     getParentRoute: () => rootRoute,

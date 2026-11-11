@@ -34,6 +34,13 @@ const MIGRATIONS: &[&str] = &[
         finished_at TEXT
     );
     CREATE INDEX jobs_by_status ON jobs (status, created_at);",
+    // 3: where playback stopped, per downloaded file
+    "CREATE TABLE watch_progress (
+        job_id     TEXT PRIMARY KEY NOT NULL,
+        position   REAL NOT NULL,
+        duration   REAL,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );",
 ];
 
 pub struct Db {

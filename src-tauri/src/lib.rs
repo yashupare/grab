@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod error;
 mod jobs;
+mod library;
 mod logging;
 mod settings;
 mod toolmgr;
@@ -61,6 +62,9 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Db::open(&data_dir.join("grab.db"))?;
     let default_settings = default_settings(app);
+    if let Ok(s) = settings::load(&db, &default_settings) {
+        library::allow_folders(app.handle(), &s);
+    }
 
     app.manage(AppState { db, default_settings, data_dir, log_dir, _log_guard: Mutex::new(guard) });
 
@@ -98,6 +102,8 @@ pub fn run() {
             commands::update_ytdlp,
             commands::enqueue_many,
             commands::fetch_playlist,
+            commands::video_library,
+            commands::save_watch_position,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

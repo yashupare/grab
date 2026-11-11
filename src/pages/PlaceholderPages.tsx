@@ -3,7 +3,6 @@ import { Tabs } from "radix-ui";
 import {
   ArrowDownToLine,
   CheckCircle2,
-  Clapperboard,
   FileSearch,
   Layers,
   Music2,
@@ -107,17 +106,6 @@ export function MusicPage() {
           )
         }
       </PageTabs>
-    </>
-  );
-}
-
-export function VideosPage() {
-  return (
-    <>
-      <PageHeader title="Videos" subtitle="Everything you've downloaded" />
-      <EmptyState icon={Clapperboard} title="No videos yet">
-        Downloaded videos appear here, ready to play in the app.
-      </EmptyState>
     </>
   );
 }

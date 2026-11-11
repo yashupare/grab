@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { api, type Job, type JobProgress } from "../lib/ipc";
 import { toast } from "./toasts";
+import { queryClient } from "../lib/queryClient";
 
 interface JobsState {
   jobs: Record<string, Job>;
@@ -53,7 +54,10 @@ export function useJobsSync() {
   useEffect(() => {
     const s = useJobs.getState();
     const subs = [
-      api.onJobUpdated(s.upsert),
+      api.onJobUpdated((job) => {
+        s.upsert(job);
+        if (job.status === "done" && job.kind === "video") queryClient.invalidateQueries({ queryKey: ["videos"] });
+      }),
       api.onJobProgress(s.progress),
       api.onJobRemoved(s.remove),
       api.onJobsCleared(s.clearFinished),

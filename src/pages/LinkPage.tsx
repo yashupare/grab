@@ -164,6 +164,7 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
         quality: kind === "video" ? height : "best",
         audioFormat: audio,
         options: { ...options, subtitles: kind === "video" ? options.subtitles : [] },
+        duration: options.section ? options.section.end - options.section.start : info.duration,
       }),
     onSuccess: () => {
       setAddedKey(choiceKey);

@@ -111,6 +111,21 @@ export interface DownloadRequest {
   groupId?: string;
   groupTitle?: string;
   options?: Partial<DownloadOptions>;
+  /** Seconds, when known (shown in the Videos library). */
+  duration?: number | null;
+}
+
+// ---- library (Rust: library.rs)
+export interface VideoItem {
+  jobId: string;
+  title: string;
+  thumbnail: string | null;
+  path: string;
+  size: number | null;
+  duration: number | null;
+  finishedAt: string | null;
+  position: number | null;
+  url: string;
 }
 
 // ---- playlists (Rust: ytdlp::PlaylistInfo)
@@ -202,6 +217,9 @@ export const api = {
   onJobRemoved: (fn: (id: string) => void) => on<string>("job-removed", fn),
   onJobsCleared: (fn: () => void) => on<null>("jobs-cleared", () => fn()),
   updateYtdlp: () => call<UpdateResult>("update_ytdlp"),
+  videoLibrary: () => call<VideoItem[]>("video_library"),
+  saveWatchPosition: (jobId: string, position: number, duration: number | null) =>
+    call<void>("save_watch_position", { jobId, position, duration }),
   onYtdlpUpdated: (fn: (r: UpdateResult) => void) => on<UpdateResult>("ytdlp-updated", fn),
 };
 
