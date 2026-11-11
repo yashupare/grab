@@ -3,7 +3,8 @@ import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDownToLine, AudioLines, Check, Clapperboard, Construction, Link2, RotateCw } from "lucide-react";
 import { detectLink, LINK_LABELS } from "../lib/links";
-import { api, type AudioFormat, type MediaInfo, type Settings } from "../lib/ipc";
+import { api, type AudioFormat, type DownloadOptions, type MediaInfo, type Settings } from "../lib/ipc";
+import { DownloadOptionsPanel } from "../components/DownloadOptionsPanel";
 import { formatBytes, formatCount, formatDuration, formatRelative, parseYmd } from "../lib/format";
 import { errorMessage, useSettings } from "../hooks/useSettings";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -136,8 +137,20 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
   const [audio, setAudio] = useState<AudioFormat>(() =>
     info.audio.some((a) => a.id === settings.audioFormat) ? settings.audioFormat : (info.audio[0]?.id ?? "opus"),
   );
+  const [options, setOptions] = useState<DownloadOptions>(() => ({
+    // Pre-select subtitles in the languages chosen in Settings, e.g. "en" matches "en" and "en-orig".
+    subtitles: info.subtitles
+      .filter((s) => settings.subtitleLangs.some((l) => s.code === l || s.code.startsWith(`${l}-`)))
+      .map((s) => s.code),
+    subtitleMode: "embed",
+    section: null,
+    sponsorblock: info.site.toLowerCase().startsWith("youtube") ? settings.sponsorblock : "off",
+    splitChapters: false,
+  }));
+  const [sectionError, setSectionError] = useState<string | null>(null);
+
   // "Added" applies only to the exact choice that was queued; changing the choice resets it.
-  const choiceKey = `${kind}|${height}|${audio}`;
+  const choiceKey = `${kind}|${height}|${audio}|${JSON.stringify(options)}`;
   const [addedKey, setAddedKey] = useState<string | null>(null);
   const added = addedKey === choiceKey;
 
@@ -150,6 +163,7 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
         kind,
         quality: kind === "video" ? height : "best",
         audioFormat: audio,
+        options: { ...options, subtitles: kind === "video" ? options.subtitles : [] },
       }),
     onSuccess: () => {
       setAddedKey(choiceKey);
@@ -211,10 +225,17 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
             ))}
       </div>
 
+      <DownloadOptionsPanel info={info} kind={kind} value={options} onChange={setOptions} onSectionError={setSectionError} />
+
       <div className="flex items-center justify-between gap-4 border-t border-line px-5 py-4">
-        <span className="text-[13px] text-muted">
-          {selectedSize ? `About ${formatBytes(selectedSize)}` : "Size unknown"}
-          {kind === "video" && " · MP4 when possible"}
+        <span className={cn("text-[13px]", sectionError ? "text-danger" : "text-muted")}>
+          {sectionError ??
+            (options.section
+              ? `Part ${formatDuration(options.section.start)}–${formatDuration(options.section.end)}`
+              : selectedSize
+                ? `About ${formatBytes(selectedSize)}`
+                : "Size unknown")}
+          {!sectionError && kind === "video" && " · MP4 when possible"}
         </span>
         <Button
           variant="primary"
@@ -222,7 +243,7 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
           icon={added ? <Check /> : <ArrowDownToLine />}
           loading={enqueue.isPending}
           onClick={() => enqueue.mutate()}
-          disabled={kind === "video" && !height}
+          disabled={(kind === "video" && !height) || sectionError !== null}
         >
           {added ? "Added · download again" : "Download"}
         </Button>

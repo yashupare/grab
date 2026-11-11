@@ -125,6 +125,8 @@ function PlaylistView({ info, settings }: { info: PlaylistInfo; settings: Settin
           audioFormat: audio,
           groupId,
           groupTitle: info.title,
+          // Batches use the defaults from Settings (per-video subtitle lists aren't known here).
+          options: { sponsorblock: settings.sponsorblock },
         })),
       );
     },

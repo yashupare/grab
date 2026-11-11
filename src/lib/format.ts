@@ -28,6 +28,16 @@ export function formatDuration(seconds: number | null | undefined): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
+/** Parse "90", "1:30", "1:02:05" or "1:30.5" into seconds. Returns null if it isn't a time. */
+export function parseTime(input: string): number | null {
+  const s = input.trim();
+  if (!s) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(s)) return null;
+  const parts = s.split(":").map(Number);
+  if (parts.slice(1).some((p) => p >= 60)) return null;
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
 /** Time left, in words: "8s left", "3 min left", "1 h 5 min left". */
 export function formatEta(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "";

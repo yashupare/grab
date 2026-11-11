@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, formatEta, formatRelative, formatSpeed, parseYmd } from "./format";
+import { formatBytes, formatDuration, formatEta, formatRelative, formatSpeed, parseTime, parseYmd } from "./format";
 
 describe("format", () => {
   it("formats bytes", () => {
@@ -22,6 +22,18 @@ describe("format", () => {
     expect(formatDuration(75)).toBe("1:15");
     expect(formatDuration(3725)).toBe("1:02:05");
     expect(formatDuration(null)).toBe("");
+  });
+
+  it("parses times typed by people", () => {
+    expect(parseTime("90")).toBe(90);
+    expect(parseTime("1:30")).toBe(90);
+    expect(parseTime("1:02:05")).toBe(3725);
+    expect(parseTime("0:12.5")).toBe(12.5);
+    expect(parseTime(" 2:00 ")).toBe(120);
+    expect(parseTime("")).toBeNull();
+    expect(parseTime("1:75")).toBeNull();
+    expect(parseTime("abc")).toBeNull();
+    expect(parseTime("1::2")).toBeNull();
   });
 
   it("formats time left", () => {

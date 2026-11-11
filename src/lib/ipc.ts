@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type Theme = "system" | "dark" | "light";
 export type AudioFormat = "opus" | "m4a" | "mp3";
+export type SponsorBlock = "off" | "remove" | "mark";
 export type VideoQuality = "best" | "2160" | "1440" | "1080" | "720" | "480" | "360";
 
 export interface Settings {
@@ -18,6 +19,16 @@ export interface Settings {
   filenameTemplate: string;
   closeToTray: boolean;
   notifications: boolean;
+  sponsorblock: SponsorBlock;
+  subtitleLangs: string[];
+}
+
+export interface DownloadOptions {
+  subtitles: string[];
+  subtitleMode: "embed" | "file";
+  section: { start: number; end: number } | null;
+  sponsorblock: SponsorBlock;
+  splitChapters: boolean;
 }
 
 export interface AppInfo {
@@ -99,6 +110,7 @@ export interface DownloadRequest {
   /** Set for playlist/channel batches. */
   groupId?: string;
   groupTitle?: string;
+  options?: Partial<DownloadOptions>;
 }
 
 // ---- playlists (Rust: ytdlp::PlaylistInfo)

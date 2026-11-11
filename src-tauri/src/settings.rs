@@ -28,6 +28,18 @@ pub enum AudioFormat {
     Mp3,
 }
 
+/// SponsorBlock: community-marked sponsor segments in YouTube videos.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SponsorBlock {
+    #[default]
+    Off,
+    /// Cut sponsor, self-promotion and "like & subscribe" segments out.
+    Remove,
+    /// Keep them, but mark them as chapters.
+    Mark,
+}
+
 pub const VIDEO_QUALITIES: &[&str] = &["best", "2160", "1440", "1080", "720", "480", "360"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,6 +56,10 @@ pub struct Settings {
     pub filename_template: String,
     pub close_to_tray: bool,
     pub notifications: bool,
+    /// Default for new downloads (YouTube only).
+    pub sponsorblock: SponsorBlock,
+    /// Subtitle languages to pre-select when a video has them, e.g. ["en"].
+    pub subtitle_langs: Vec<String>,
 }
 
 impl Default for Settings {
@@ -59,6 +75,8 @@ impl Default for Settings {
             filename_template: "%(title)s [%(id)s].%(ext)s".into(),
             close_to_tray: true,
             notifications: true,
+            sponsorblock: SponsorBlock::Off,
+            subtitle_langs: Vec::new(),
         }
     }
 }

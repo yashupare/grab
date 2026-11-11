@@ -31,7 +31,7 @@ use crate::{
     AppState,
     db::Db,
     error::{AppError, AppResult},
-    settings::{self, AudioFormat},
+    settings::{self, AudioFormat, SponsorBlock},
     ytdlp,
 };
 
@@ -60,6 +60,52 @@ fn default_audio() -> AudioFormat {
     AudioFormat::Opus
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtitleMode {
+    /// Inside the video file (switchable in players).
+    #[default]
+    Embed,
+    /// Separate .srt file next to the video.
+    File,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct Section {
+    pub start: f64,
+    pub end: f64,
+}
+
+/// Extra options from "More options". All default to off.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DownloadOptions {
+    /// Subtitle language codes as reported by yt-dlp ("en", "hi-orig", …). Video only.
+    pub subtitles: Vec<String>,
+    pub subtitle_mode: SubtitleMode,
+    /// Only download this part (seconds).
+    pub section: Option<Section>,
+    pub sponsorblock: SponsorBlock,
+    /// One file per chapter (in addition to the full file).
+    pub split_chapters: bool,
+}
+
+impl DownloadOptions {
+    fn validate(&self) -> AppResult<()> {
+        if self.subtitles.len() > 20
+            || self.subtitles.iter().any(|c| c.is_empty() || c.len() > 20 || !c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'))
+        {
+            return Err(AppError::Invalid("Invalid subtitle language.".into()));
+        }
+        if let Some(s) = self.section {
+            if !(s.start.is_finite() && s.end.is_finite() && s.start >= 0.0 && s.end > s.start) {
+                return Err(AppError::Invalid("The end time must be after the start time.".into()));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadRequest {
@@ -77,10 +123,13 @@ pub struct DownloadRequest {
     pub group_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_title: Option<String>,
+    #[serde(default)]
+    pub options: DownloadOptions,
 }
 
 impl DownloadRequest {
     fn validate(&self) -> AppResult<()> {
+        self.options.validate()?;
         if !(self.url.starts_with("https://") || self.url.starts_with("http://")) {
             return Err(AppError::Invalid("That doesn't look like a web link.".into()));
         }
@@ -290,9 +339,14 @@ pub fn download_args(req: &DownloadRequest, dir: &Path, temp: &Path, template: &
 
     match req.kind {
         Kind::Video => {
-            // Resolution first, then prefer MP4-friendly streams so files play everywhere;
-            // MKV only when the best stream at that resolution can't go in MP4.
-            let sort = if req.quality == "best" { "res,ext:mp4:m4a".to_string() } else { format!("res:{},ext:mp4:m4a", req.quality) };
+            // Resolution first; then H.264 + AAC in MP4 when the site offers it at that resolution
+            // (plays in every Windows app without extra codecs). Above 1080p YouTube only has
+            // VP9/AV1, so those still download at full quality (MKV if MP4 can't hold them).
+            let sort = if req.quality == "best" {
+                "res,vcodec:h264,ext:mp4:m4a".to_string()
+            } else {
+                format!("res:{},vcodec:h264,ext:mp4:m4a", req.quality)
+            };
             a.extend(["-f", "bv*+ba/b", "-S"].map(String::from));
             a.push(sort);
             a.extend(["--merge-output-format", "mp4/mkv", "--embed-chapters"].map(String::from));
@@ -307,8 +361,48 @@ pub fn download_args(req: &DownloadRequest, dir: &Path, temp: &Path, template: &
             a.extend(["--embed-thumbnail", "--convert-thumbnails", "jpg"].map(String::from));
         }
     }
+    a.extend(option_args(req));
     a.push("--".into());
     a.push(req.url.clone());
+    a
+}
+
+/// yt-dlp wants "1:02.5"-style or plain seconds; plain seconds with decimals is unambiguous.
+fn secs(v: f64) -> String {
+    let s = format!("{v:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+fn option_args(req: &DownloadRequest) -> Vec<String> {
+    let o = &req.options;
+    let mut a: Vec<String> = Vec::new();
+    if req.kind == Kind::Video && !o.subtitles.is_empty() {
+        a.extend(["--sub-langs".into(), o.subtitles.join(",")]);
+        a.push("--write-subs".into());
+        if o.subtitles.iter().any(|c| c.ends_with("-orig")) {
+            a.push("--write-auto-subs".into());
+        }
+        match o.subtitle_mode {
+            SubtitleMode::Embed => a.push("--embed-subs".into()),
+            SubtitleMode::File => a.extend(["--convert-subs", "srt"].map(String::from)),
+        }
+    }
+    if let Some(s) = o.section {
+        // Cuts land on the nearest keyframe (fast, may be ±1–2 s off).
+        a.extend(["--download-sections".into(), format!("*{}-{}", secs(s.start), secs(s.end))]);
+    }
+    match o.sponsorblock {
+        SponsorBlock::Off => {}
+        SponsorBlock::Remove => a.extend(["--sponsorblock-remove", "sponsor,selfpromo,interaction"].map(String::from)),
+        SponsorBlock::Mark => a.extend(["--sponsorblock-mark", "all"].map(String::from)),
+    }
+    if o.split_chapters {
+        a.extend([
+            "--split-chapters".into(),
+            "-o".into(),
+            "chapter:%(title)s - chapters/%(section_number)02d %(section_title)s.%(ext)s".into(),
+        ]);
+    }
     a
 }
 
@@ -854,7 +948,41 @@ mod tests {
             audio_format: AudioFormat::Opus,
             group_id: None,
             group_title: None,
+            options: DownloadOptions::default(),
         }
+    }
+
+    #[test]
+    fn option_args_cover_subtitles_sections_sponsorblock_chapters() {
+        let mut r = req(Kind::Video);
+        r.options = DownloadOptions {
+            subtitles: vec!["en".into(), "hi-orig".into()],
+            subtitle_mode: SubtitleMode::File,
+            section: Some(Section { start: 62.5, end: 125.0 }),
+            sponsorblock: SponsorBlock::Remove,
+            split_chapters: true,
+        };
+        let s = option_args(&r).join(" ");
+        assert!(s.contains("--sub-langs en,hi-orig --write-subs --write-auto-subs --convert-subs srt"));
+        assert!(s.contains("--download-sections *62.5-125"));
+        assert!(s.contains("--sponsorblock-remove sponsor,selfpromo,interaction"));
+        assert!(s.contains("--split-chapters -o chapter:"));
+
+        // audio jobs never ask for subtitles
+        r.kind = Kind::Audio;
+        assert!(!option_args(&r).join(" ").contains("--sub-langs"));
+        // defaults add nothing
+        assert!(option_args(&req(Kind::Video)).is_empty());
+    }
+
+    #[test]
+    fn rejects_bad_options() {
+        let mut r = req(Kind::Video);
+        r.options.section = Some(Section { start: 30.0, end: 10.0 });
+        assert!(r.validate().is_err());
+        r.options.section = None;
+        r.options.subtitles = vec!["en;rm".into()];
+        assert!(r.validate().is_err());
     }
 
     #[test]
@@ -874,7 +1002,7 @@ mod tests {
     fn video_args_limit_resolution_and_prefer_mp4() {
         let a = download_args(&req(Kind::Video), Path::new("C:/V"), Path::new("C:/T"), "%(title)s.%(ext)s");
         let s = a.join(" ");
-        assert!(s.contains("-S res:1080,ext:mp4:m4a"));
+        assert!(s.contains("-S res:1080,vcodec:h264,ext:mp4:m4a"));
         assert!(s.contains("--merge-output-format mp4/mkv"));
         assert!(s.contains("temp:C:/T"));
         assert_eq!(a[a.len() - 2], "--", "URL must come after -- so it can't be read as an option");

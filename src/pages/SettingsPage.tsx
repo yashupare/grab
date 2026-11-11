@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -11,7 +11,7 @@ import { Segmented } from "../components/ui/Segmented";
 import { Button } from "../components/ui/Button";
 import { useUi } from "../stores/ui";
 import { errorMessage, useSettings, useUpdateSettings } from "../hooks/useSettings";
-import { api, type AudioFormat, type Settings, type Theme, type VideoQuality } from "../lib/ipc";
+import { api, type AudioFormat, type Settings, type SponsorBlock, type Theme, type VideoQuality } from "../lib/ipc";
 import { cn } from "../lib/cn";
 
 export const SETTINGS_SECTIONS = ["general", "downloads", "music", "tools", "spotify", "updates", "advanced", "about"] as const;
@@ -31,7 +31,7 @@ const LABELS: Record<SettingsSection, string> = {
 /** Settings that exist in the plan but whose feature isn't built yet. */
 const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: string }>> = {
   general: { milestone: "M4", items: ["Start with Windows", "Keep running in the tray when closed"] },
-  downloads: { milestone: "M2", items: ["File name pattern", "Subtitles and SponsorBlock defaults", "Speed limit"] },
+  downloads: { milestone: "M6", items: ["File name pattern", "Speed limit"] },
   music: { milestone: "M4", items: ["Add and remove library folders", "Crossfade", "Normalise volume"] },
   tools: { milestone: "M5", items: ["Hardware acceleration", "Default output folder and quality"] },
   spotify: { milestone: "M3", items: ["Connect your Spotify account (Premium) for playlists over 100 songs"] },
@@ -183,7 +183,50 @@ function DownloadsSection({ s, save }: { s: Settings; save: (p: Partial<Settings
           options={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: n }))}
         />
       </Row>
+      <Row title="Sponsor segments" description="Default for YouTube videos. Uses SponsorBlock, where viewers mark sponsor reads.">
+        <Segmented<SponsorBlock>
+          label="Sponsor segments default"
+          value={s.sponsorblock}
+          onChange={(sponsorblock) => save({ sponsorblock })}
+          options={[
+            { value: "off", label: "Keep" },
+            { value: "remove", label: "Remove" },
+            { value: "mark", label: "Mark" },
+          ]}
+        />
+      </Row>
+      <Row title="Subtitle languages" description="Pre-selected when a video has them. Language codes, e.g. en, hi, es.">
+        <LangInput value={s.subtitleLangs} onSave={(subtitleLangs) => save({ subtitleLangs })} />
+      </Row>
     </>
+  );
+}
+
+const LANG = /^[a-z]{2,3}(-[a-z0-9]+)?$/i;
+
+function LangInput({ value, onSave }: { value: string[]; onSave: (v: string[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  const [error, setError] = useState(false);
+  function commit() {
+    const codes = [...new Set(text.split(/[\s,]+/).map((c) => c.trim().toLowerCase()).filter(Boolean))];
+    const bad = codes.some((c) => !LANG.test(c));
+    setError(bad);
+    if (!bad && codes.join(",") !== value.join(",")) onSave(codes);
+  }
+  return (
+    <input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      placeholder="None"
+      aria-label="Subtitle languages"
+      aria-invalid={error}
+      className={cn(
+        "h-9 w-48 rounded-md border bg-surface-2 px-3 text-[13px] outline-none placeholder:text-faint focus:border-muted",
+        error ? "border-danger" : "border-line",
+      )}
+    />
   );
 }
 
