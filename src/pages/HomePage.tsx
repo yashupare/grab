@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine, Disc3, Layers, Scissors, type LucideIcon } from "lucide-react";
 import { SmartLinkInput } from "../components/SmartLinkInput";
+import { JobList, useFilteredJobs } from "../components/JobList";
 
 function greeting(date = new Date()) {
   const h = date.getHours();
@@ -34,6 +35,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function HomePage() {
+  const active = useFilteredJobs("active");
+  const done = useFilteredJobs("done");
   return (
     <div className="mx-auto max-w-[880px] pt-[6vh]">
       <h1 className="text-[40px] leading-[44px] font-bold tracking-[-0.03em]">{greeting()}</h1>
@@ -64,10 +67,29 @@ export function HomePage() {
       </div>
 
       <Section title="In progress">
-        <div className="rounded-lg border border-dashed border-line px-5 py-6 text-center text-muted">
-          Nothing downloading. Paste a link above to start.
-        </div>
+        {active.length ? (
+          <div className="rounded-lg border border-line bg-surface-1 p-2">
+            <JobList filter="active" limit={4} empty={{ icon: ArrowDownToLine, title: "", text: "" }} />
+            {active.length > 4 && (
+              <Link to="/activity" className="block px-3 pt-2 pb-1 text-[13px] text-muted hover:text-fg">
+                View all {active.length} →
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-line px-5 py-6 text-center text-muted">
+            Nothing downloading. Paste a link above to start.
+          </div>
+        )}
       </Section>
+
+      {done.length > 0 && (
+        <Section title="Recently downloaded">
+          <div className="rounded-lg border border-line bg-surface-1 p-2">
+            <JobList filter="done" limit={5} empty={{ icon: ArrowDownToLine, title: "", text: "" }} />
+          </div>
+        </Section>
+      )}
     </div>
   );
 }

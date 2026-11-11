@@ -1,10 +1,12 @@
 mod commands;
 mod db;
 mod error;
+mod jobs;
 mod logging;
 mod settings;
 mod toolmgr;
 mod tools;
+mod ytdlp;
 
 use std::{path::PathBuf, sync::Mutex};
 
@@ -61,6 +63,11 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let default_settings = default_settings(app);
 
     app.manage(AppState { db, default_settings, data_dir, log_dir, _log_guard: Mutex::new(guard) });
+
+    // The download queue needs AppState, so it starts after it's registered.
+    let jobs = jobs::Manager::new(app.handle().clone());
+    jobs.start()?;
+    app.manage(jobs);
     Ok(())
 }
 
@@ -76,6 +83,16 @@ pub fn run() {
             commands::tool_status,
             commands::tools_missing,
             commands::install_tools,
+            commands::fetch_info,
+            commands::enqueue_download,
+            commands::list_jobs,
+            commands::pause_job,
+            commands::resume_job,
+            commands::cancel_job,
+            commands::remove_job,
+            commands::clear_finished_jobs,
+            commands::open_job_file,
+            commands::reveal_job_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

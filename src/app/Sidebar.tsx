@@ -4,6 +4,7 @@ import { Heart, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { Tooltip } from "radix-ui";
 import { NAV, SETTINGS_NAV, type NavItem } from "./nav";
 import { useUi } from "../stores/ui";
+import { useJobs } from "../stores/jobs";
 import { cn } from "../lib/cn";
 import { IconButton } from "../components/ui/IconButton";
 
@@ -65,6 +66,7 @@ export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUi();
   const narrow = useNarrow();
   const collapsed = sidebarCollapsed || narrow;
+  const activeCount = useJobs((s) => Object.values(s.jobs).filter((j) => j.status === "running" || j.status === "queued").length);
 
   return (
     <nav
@@ -76,7 +78,7 @@ export function Sidebar() {
     >
       <div className="flex flex-col gap-0.5">
         {NAV.map((item) => (
-          <NavLink key={item.to} item={item} collapsed={collapsed} />
+          <NavLink key={item.to} item={item} collapsed={collapsed} badge={item.to === "/activity" ? activeCount : undefined} />
         ))}
       </div>
 

@@ -8,11 +8,14 @@ import { CommandPalette } from "./CommandPalette";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
 import { useThemeSync } from "../hooks/useSettings";
 import { SetupGate } from "./SetupScreen";
+import { useJobsSync } from "../stores/jobs";
+import { Toaster } from "../components/Toaster";
 
 export function AppShell() {
   const linkRef = useRef<HTMLInputElement>(null);
   useGlobalShortcuts(linkRef);
   useThemeSync();
+  useJobsSync();
 
   return (
     <Tooltip.Provider delayDuration={500} skipDelayDuration={200}>
@@ -30,6 +33,7 @@ export function AppShell() {
         </div>
         <ActivitySheet />
         <CommandPalette />
+        <Toaster />
       </div>
     </Tooltip.Provider>
   );

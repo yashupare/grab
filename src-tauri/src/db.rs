@@ -17,6 +17,23 @@ const MIGRATIONS: &[&str] = &[
         value      TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );",
+    // 2: download jobs (queue + history)
+    "CREATE TABLE jobs (
+        id          TEXT PRIMARY KEY NOT NULL,
+        kind        TEXT NOT NULL,
+        url         TEXT NOT NULL,
+        title       TEXT NOT NULL,
+        thumbnail   TEXT,
+        request     TEXT NOT NULL,
+        status      TEXT NOT NULL,
+        progress    REAL NOT NULL DEFAULT 0,
+        error       TEXT,
+        file_path   TEXT,
+        file_size   INTEGER,
+        created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        finished_at TEXT
+    );
+    CREATE INDEX jobs_by_status ON jobs (status, created_at);",
 ];
 
 pub struct Db {

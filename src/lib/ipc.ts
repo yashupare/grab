@@ -49,6 +49,83 @@ export type ToolProgress =
   | { phase: "done"; id: string }
   | { phase: "failed"; id: string; message: string };
 
+// ---- media info (Rust: ytdlp::MediaInfo)
+export interface VideoOption {
+  height: number;
+  label: string;
+  fps: number | null;
+  hdr: boolean;
+  codec: string;
+  size: number | null;
+}
+export interface AudioOption {
+  id: AudioFormat;
+  label: string;
+  detail: string;
+  size: number | null;
+}
+export interface SubtitleLang {
+  code: string;
+  name: string;
+  auto: boolean;
+}
+export interface MediaInfo {
+  id: string;
+  url: string;
+  title: string;
+  channel: string | null;
+  duration: number | null;
+  thumbnail: string | null;
+  viewCount: number | null;
+  uploadDate: string | null;
+  site: string;
+  video: VideoOption[];
+  audio: AudioOption[];
+  subtitles: SubtitleLang[];
+  chapters: number;
+}
+
+// ---- download queue (Rust: jobs.rs)
+export type JobKind = "video" | "audio";
+export type JobStatus = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
+
+export interface DownloadRequest {
+  url: string;
+  title: string;
+  thumbnail: string | null;
+  kind: JobKind;
+  quality: string;
+  audioFormat: AudioFormat;
+}
+
+export interface Job {
+  id: string;
+  kind: JobKind;
+  url: string;
+  title: string;
+  thumbnail: string | null;
+  status: JobStatus;
+  progress: number;
+  error: string | null;
+  filePath: string | null;
+  fileSize: number | null;
+  createdAt: string;
+  finishedAt: string | null;
+  request: DownloadRequest;
+}
+
+export interface JobProgress {
+  id: string;
+  stage: "downloading" | "processing";
+  part: number;
+  fraction: number;
+  downloaded: number | null;
+  total: number | null;
+  speed: number | null;
+  eta: number | null;
+  step: string | null;
+}
+
 export interface AppError {
   kind: "db" | "io" | "network" | "invalid" | "unavailable";
   message: string;
@@ -72,6 +149,24 @@ export const api = {
   toolStatus: () => call<ToolStatus[]>("tool_status"),
   toolsMissing: () => call<ToolPackage[]>("tools_missing"),
   installTools: () => call<void>("install_tools"),
-  onToolProgress: (fn: (p: ToolProgress) => void): Promise<UnlistenFn> =>
-    isTauri() ? listen<ToolProgress>("tools-progress", (e) => fn(e.payload)) : Promise.resolve(() => {}),
+  onToolProgress: (fn: (p: ToolProgress) => void) => on<ToolProgress>("tools-progress", fn),
+
+  fetchInfo: (url: string) => call<MediaInfo>("fetch_info", { url }),
+  enqueueDownload: (request: DownloadRequest) => call<Job>("enqueue_download", { request }),
+  listJobs: () => call<Job[]>("list_jobs"),
+  pauseJob: (id: string) => call<void>("pause_job", { id }),
+  resumeJob: (id: string) => call<void>("resume_job", { id }),
+  cancelJob: (id: string) => call<void>("cancel_job", { id }),
+  removeJob: (id: string) => call<void>("remove_job", { id }),
+  clearFinishedJobs: () => call<number>("clear_finished_jobs"),
+  openJobFile: (id: string) => call<void>("open_job_file", { id }),
+  revealJobFile: (id: string) => call<void>("reveal_job_file", { id }),
+  onJobUpdated: (fn: (j: Job) => void) => on<Job>("job-updated", fn),
+  onJobProgress: (fn: (p: JobProgress) => void) => on<JobProgress>("job-progress", fn),
+  onJobRemoved: (fn: (id: string) => void) => on<string>("job-removed", fn),
+  onJobsCleared: (fn: () => void) => on<null>("jobs-cleared", () => fn()),
 };
+
+function on<T>(event: string, fn: (payload: T) => void): Promise<UnlistenFn> {
+  return isTauri() ? listen<T>(event, (e) => fn(e.payload)) : Promise.resolve(() => {});
+}

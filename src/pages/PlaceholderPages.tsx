@@ -1,9 +1,24 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { Tabs } from "radix-ui";
-import { ArrowDownToLine, Clapperboard, FileSearch, Layers, Music2, Repeat2, Scissors, Shrink, type LucideIcon } from "lucide-react";
+import {
+  ArrowDownToLine,
+  CheckCircle2,
+  Clapperboard,
+  FileSearch,
+  Layers,
+  Music2,
+  Repeat2,
+  Scissors,
+  Shrink,
+  type LucideIcon,
+} from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
+import { JobList } from "../components/JobList";
+import { api } from "../lib/ipc";
+import { toast } from "../stores/toasts";
+import { errorMessage } from "../hooks/useSettings";
 
 function PageTabs({ tabs, children }: { tabs: string[]; children: (tab: string) => React.ReactNode }) {
   return (
@@ -29,14 +44,35 @@ function PageTabs({ tabs, children }: { tabs: string[]; children: (tab: string) 
 }
 
 export function ActivityPage() {
+  const clear = () =>
+    api
+      .clearFinishedJobs()
+      .then((n) => toast.info(n ? `Cleared ${n} finished item${n === 1 ? "" : "s"}. Files are kept.` : "Nothing to clear."))
+      .catch((e) => toast.error(errorMessage(e)));
   return (
     <>
-      <PageHeader title="Activity" subtitle="Downloads, imports and exports" />
+      <PageHeader
+        title="Activity"
+        subtitle="Downloads, imports and exports"
+        actions={
+          <Button size="sm" variant="ghost" onClick={clear}>
+            Clear finished
+          </Button>
+        }
+      />
       <PageTabs tabs={["In progress", "Completed", "Failed"]}>
         {(t) => (
-          <EmptyState icon={ArrowDownToLine} title={t === "Failed" ? "No failed jobs" : "Nothing here yet"}>
-            {t === "In progress" ? "Paste a link anywhere to start a download." : "Finished jobs will be listed here."}
-          </EmptyState>
+          <div className="pt-2">
+            {t === "In progress" && (
+              <JobList filter="active" empty={{ icon: ArrowDownToLine, title: "Nothing downloading", text: "Paste a link anywhere to start a download." }} />
+            )}
+            {t === "Completed" && (
+              <JobList filter="done" empty={{ icon: CheckCircle2, title: "Nothing finished yet", text: "Finished downloads are listed here." }} />
+            )}
+            {t === "Failed" && (
+              <JobList filter="failed" empty={{ icon: CheckCircle2, title: "No problems", text: "Failed or cancelled downloads show up here." }} />
+            )}
+          </div>
         )}
       </PageTabs>
     </>
