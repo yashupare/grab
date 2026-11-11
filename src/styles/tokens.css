@@ -1,0 +1,71 @@
+/* Design tokens: "warm graphite + ember". See docs/PLAN.md §2.
+   Dark is the base; light applies when the user picks it, or when Windows is light and the
+   user picked "System" (no data-theme attribute). */
+
+:root {
+  color-scheme: dark;
+  --bg: #0f0f0e;
+  --surface-1: #171715;
+  --surface-2: #1f1e1c;
+  --surface-3: #292826;
+  --border: #2e2d2a;
+  --text: #f2f0eb;
+  --text-muted: #a19e95;
+  --text-faint: #6e6b63;
+  --accent: #ff7a45;
+  --accent-hover: #ff8f61;
+  --accent-fg: #1c0a02;
+  --accent-soft: rgb(255 122 69 / 0.14);
+  --success: #3dbf7f;
+  --warning: #e3a53a;
+  --danger: #f0595e;
+  --focus: #ff7a45;
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+  --scrollbar: #3a3935;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --surface-1: #ffffff;
+  --surface-2: #f0eee9;
+  --surface-3: #e6e3dc;
+  --border: #e2dfd7;
+  --text: #1a1915;
+  --text-muted: #6b675e;
+  --text-faint: #9a968c;
+  --accent: #c2410c;
+  --accent-hover: #a93a0b;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(194 65 12 / 0.1);
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --focus: #c2410c;
+  --shadow-float: 0 12px 32px rgb(26 25 21 / 0.14), 0 2px 6px rgb(26 25 21 / 0.08);
+  --scrollbar: #cfcbc2;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #f6f5f2;
+    --surface-1: #ffffff;
+    --surface-2: #f0eee9;
+    --surface-3: #e6e3dc;
+    --border: #e2dfd7;
+    --text: #1a1915;
+    --text-muted: #6b675e;
+    --text-faint: #9a968c;
+    --accent: #c2410c;
+    --accent-hover: #a93a0b;
+    --accent-fg: #ffffff;
+    --accent-soft: rgb(194 65 12 / 0.1);
+    --success: #15803d;
+    --warning: #b45309;
+    --danger: #dc2626;
+    --focus: #c2410c;
+    --shadow-float: 0 12px 32px rgb(26 25 21 / 0.14), 0 2px 6px rgb(26 25 21 / 0.08);
+    --scrollbar: #cfcbc2;
+  }
+}
