@@ -84,6 +84,179 @@ pub async fn fetch_info(url: &str) -> AppResult<MediaInfo> {
     summarize(raw)
 }
 
+// ---------------------------------------------------------------- playlists & channels
+
+/// Most items listed for one playlist or channel (keeps huge channels responsive).
+pub const PLAYLIST_LIMIT: usize = 1000;
+
+#[derive(Debug, Deserialize)]
+pub struct RawPlaylist {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub channel: Option<String>,
+    pub uploader: Option<String>,
+    pub playlist_count: Option<u64>,
+    pub webpage_url: Option<String>,
+    #[serde(default)]
+    pub entries: Vec<RawEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawEntry {
+    pub id: Option<String>,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub duration: Option<f64>,
+    #[serde(default)]
+    pub thumbnails: Vec<RawThumb>,
+    pub live_status: Option<String>,
+    pub availability: Option<String>,
+    pub ie_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawThumb {
+    pub url: String,
+    pub width: Option<u32>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistEntry {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub duration: Option<f64>,
+    pub thumbnail: Option<String>,
+    /// Private, deleted, or not yet live: shown but can't be selected.
+    pub unavailable: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistInfo {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub channel: Option<String>,
+    /// Total reported by the site (may be larger than `entries` when truncated).
+    pub total: Option<u64>,
+    pub entries: Vec<PlaylistEntry>,
+    pub truncated: bool,
+}
+
+/// A bare channel link lists its tabs; point it at the Videos tab instead.
+pub fn normalize_channel_url(url: &str) -> String {
+    let trimmed = url.trim_end_matches('/');
+    let lower = trimmed.to_lowercase();
+    let is_channel = ["youtube.com/@", "youtube.com/channel/", "youtube.com/c/", "youtube.com/user/"]
+        .iter()
+        .any(|p| lower.contains(p));
+    let has_tab = ["/videos", "/shorts", "/streams", "/playlists", "/podcasts", "/releases"]
+        .iter()
+        .any(|t| lower.ends_with(t));
+    if is_channel && !has_tab && !lower.contains("list=") { format!("{trimmed}/videos") } else { url.to_string() }
+}
+
+pub fn summarize_playlist(raw: RawPlaylist, url: &str) -> PlaylistInfo {
+    let entries: Vec<PlaylistEntry> = raw
+        .entries
+        .into_iter()
+        .filter_map(|e| {
+            let id = e.id?;
+            let youtube = e.ie_key.as_deref().is_none_or(|k| k.starts_with("Youtube"));
+            let url = e.url.unwrap_or_else(|| format!("https://www.youtube.com/watch?v={id}"));
+            let title = e.title.unwrap_or_else(|| "Untitled".into());
+            let unavailable = title.starts_with("[Private")
+                || title.starts_with("[Deleted")
+                || matches!(e.availability.as_deref(), Some("private" | "needs_auth" | "subscriber_only" | "premium_only"))
+                || matches!(e.live_status.as_deref(), Some("is_live" | "is_upcoming"));
+            let thumbnail = e
+                .thumbnails
+                .into_iter()
+                .max_by_key(|t| t.width.unwrap_or(0))
+                .map(|t| t.url)
+                .or_else(|| youtube.then(|| format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg")));
+            Some(PlaylistEntry { id, url, title, duration: e.duration, thumbnail, unavailable })
+        })
+        .collect();
+    PlaylistInfo {
+        id: raw.id.unwrap_or_default(),
+        url: raw.webpage_url.unwrap_or_else(|| url.to_string()),
+        title: raw.title.unwrap_or_else(|| "Playlist".into()),
+        channel: raw.channel.or(raw.uploader),
+        total: raw.playlist_count,
+        truncated: entries.len() >= PLAYLIST_LIMIT,
+        entries,
+    }
+}
+
+pub async fn fetch_playlist(url: &str) -> AppResult<PlaylistInfo> {
+    let url = normalize_channel_url(url);
+    let t = tool_paths()?;
+    let mut cmd = command(&t);
+    cmd.args(["-J", "--flat-playlist", "-I", &format!("1:{PLAYLIST_LIMIT}"), "--", &url])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let out = tokio::time::timeout(Duration::from_secs(180), cmd.spawn()?.wait_with_output())
+        .await
+        .map_err(|_| AppError::Network("Listing the playlist took too long. Check your connection and try again.".into()))??;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        tracing::warn!(%url, stderr = %stderr.trim(), "yt-dlp playlist failed");
+        return Err(AppError::Invalid(friendly_error(&stderr)));
+    }
+    let raw: RawPlaylist = serde_json::from_slice(&out.stdout)
+        .map_err(|e| AppError::Invalid(format!("Couldn't read the playlist ({e}).")))?;
+    Ok(summarize_playlist(raw, &url))
+}
+
+// ---------------------------------------------------------------- updates
+
+/// The installed yt-dlp version, e.g. "2026.10.26".
+pub async fn version(t: &ToolPaths) -> AppResult<String> {
+    let mut cmd = command(t);
+    cmd.arg("--version").stdout(Stdio::piped()).stderr(Stdio::null());
+    let out = tokio::time::timeout(Duration::from_secs(20), cmd.output())
+        .await
+        .map_err(|_| AppError::Invalid("yt-dlp didn't respond.".into()))??;
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Run yt-dlp's own updater (stable channel; it verifies the release against the project's
+/// signed checksums). Returns (version before, version after).
+pub async fn self_update(t: &ToolPaths) -> AppResult<(String, String)> {
+    let before = version(t).await?;
+    let mut cmd = command(t);
+    cmd.arg("-U").stdout(Stdio::piped()).stderr(Stdio::piped());
+    let out = tokio::time::timeout(Duration::from_secs(180), cmd.output())
+        .await
+        .map_err(|_| AppError::Network("Checking for downloader updates took too long.".into()))??;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        tracing::warn!(stderr = %err.trim(), "yt-dlp self-update failed");
+        return Err(AppError::Network(friendly_error(&err)));
+    }
+    let after = version(t).await?;
+    Ok((before, after))
+}
+
+/// Signs that YouTube changed something and a newer yt-dlp is likely to fix it.
+pub fn looks_outdated(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    [
+        "unable to extract",
+        "nsig extraction failed",
+        "signature extraction failed",
+        "precondition check failed",
+        "please report this issue",
+        "no video formats found",
+        "http error 403",
+    ]
+    .iter()
+    .any(|p| s.contains(p))
+}
+
 // ---------------------------------------------------------------- errors
 
 /// Turn yt-dlp's stderr into one sentence a person can act on.
@@ -428,5 +601,43 @@ mod tests {
             "Some new failure"
         );
         assert_eq!(friendly_error(""), "Something went wrong. Try again.");
+    }
+
+    #[test]
+    fn channel_links_point_at_videos_tab() {
+        assert_eq!(normalize_channel_url("https://www.youtube.com/@YouTube"), "https://www.youtube.com/@YouTube/videos");
+        assert_eq!(normalize_channel_url("https://www.youtube.com/@YouTube/"), "https://www.youtube.com/@YouTube/videos");
+        assert_eq!(normalize_channel_url("https://www.youtube.com/@YouTube/shorts"), "https://www.youtube.com/@YouTube/shorts");
+        let pl = "https://www.youtube.com/playlist?list=PL123";
+        assert_eq!(normalize_channel_url(pl), pl);
+    }
+
+    #[test]
+    fn summarizes_playlists() {
+        let raw: RawPlaylist = serde_json::from_value(json!({
+            "id": "PL1", "title": "Mix", "channel": "C", "playlist_count": 3,
+            "entries": [
+                { "id": "aaaaaaaaaaa", "url": "https://www.youtube.com/watch?v=aaaaaaaaaaa", "title": "One", "duration": 60.0,
+                  "thumbnails": [{ "url": "small", "width": 120 }, { "url": "big", "width": 336 }], "ie_key": "Youtube" },
+                { "id": "bbbbbbbbbbb", "title": "[Private video]", "ie_key": "Youtube" },
+                { "id": "ccccccccccc", "title": "Soon", "live_status": "is_upcoming", "ie_key": "Youtube" },
+                { "title": "no id: dropped" }
+            ]
+        }))
+        .unwrap();
+        let p = summarize_playlist(raw, "https://x");
+        assert_eq!(p.entries.len(), 3);
+        assert_eq!(p.entries[0].thumbnail.as_deref(), Some("big"));
+        assert!(!p.entries[0].unavailable && p.entries[1].unavailable && p.entries[2].unavailable);
+        assert_eq!(p.entries[1].url, "https://www.youtube.com/watch?v=bbbbbbbbbbb");
+        assert_eq!(p.entries[1].thumbnail.as_deref(), Some("https://i.ytimg.com/vi/bbbbbbbbbbb/mqdefault.jpg"));
+        assert!(!p.truncated);
+    }
+
+    #[test]
+    fn detects_outdated_downloader() {
+        assert!(looks_outdated("ERROR: [youtube] x: nsig extraction failed: Some formats may be missing"));
+        assert!(looks_outdated("ERROR: unable to download video data: HTTP Error 403: Forbidden"));
+        assert!(!looks_outdated("ERROR: [youtube] x: Private video"));
     }
 }

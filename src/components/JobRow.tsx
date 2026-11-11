@@ -17,6 +17,7 @@ const STEP_LABELS: Record<string, string> = {
   Metadata: "Adding details",
   EmbedSubtitle: "Adding subtitles",
   MoveFiles: "Saving",
+  UpdateDownloader: "The site changed something. Updating the downloader and trying again",
 };
 
 function statusLine(job: Job, live: JobProgress | undefined): { text: string; tone?: "danger" | "success" } {

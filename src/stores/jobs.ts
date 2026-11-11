@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { api, type Job, type JobProgress } from "../lib/ipc";
+import { toast } from "./toasts";
 
 interface JobsState {
   jobs: Record<string, Job>;
@@ -56,6 +57,7 @@ export function useJobsSync() {
       api.onJobProgress(s.progress),
       api.onJobRemoved(s.remove),
       api.onJobsCleared(s.clearFinished),
+      api.onYtdlpUpdated((r) => toast.info(`Downloader updated to ${r.after}. Downloads keep working when sites change.`)),
     ];
     api.listJobs().then(s.setAll).catch(() => s.setAll([]));
     return () => {

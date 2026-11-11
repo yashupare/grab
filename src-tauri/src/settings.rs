@@ -71,6 +71,12 @@ impl Settings {
         if !VIDEO_QUALITIES.contains(&self.video_quality.as_str()) {
             return Err(AppError::Invalid(format!("Unknown video quality '{}'.", self.video_quality)));
         }
+        for (name, dir) in [("Video folder", &self.video_dir), ("Music folder", &self.music_dir)] {
+            // Empty means "use the default" (filled in at startup); anything else must be absolute.
+            if !dir.is_empty() && !std::path::Path::new(dir).is_absolute() {
+                return Err(AppError::Invalid(format!("{name} must be a full path, like C:\\Users\\you\\Videos.")));
+            }
+        }
         let t = self.filename_template.trim();
         if t.is_empty() || t.contains("..") || t.contains(':') {
             return Err(AppError::Invalid("File name pattern can't be empty or contain '..' or ':'.".into()));
@@ -179,6 +185,7 @@ mod tests {
         assert!(update(&db, &d, patch(json!({ "videoQuality": "4k" }))).is_err());
         assert!(update(&db, &d, patch(json!({ "nope": true }))).is_err());
         assert!(update(&db, &d, patch(json!({ "filenameTemplate": "../x" }))).is_err());
+        assert!(update(&db, &d, patch(json!({ "videoDir": "relative\\folder" }))).is_err());
         // nothing was saved by the rejected updates
         assert_eq!(load(&db, &d).unwrap(), d);
     }

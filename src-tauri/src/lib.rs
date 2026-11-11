@@ -75,6 +75,8 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(setup)
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
@@ -93,6 +95,9 @@ pub fn run() {
             commands::clear_finished_jobs,
             commands::open_job_file,
             commands::reveal_job_file,
+            commands::update_ytdlp,
+            commands::enqueue_many,
+            commands::fetch_playlist,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

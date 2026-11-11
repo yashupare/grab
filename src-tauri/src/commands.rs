@@ -65,6 +65,21 @@ pub async fn enqueue_download(jobs: Jobs<'_>, request: jobs::DownloadRequest) ->
 }
 
 #[tauri::command]
+pub async fn enqueue_many(jobs: Jobs<'_>, requests: Vec<jobs::DownloadRequest>) -> AppResult<usize> {
+    jobs.enqueue_many(requests)
+}
+
+/// Videos in a playlist or channel (flat listing: fast, no per-video details).
+#[tauri::command]
+pub async fn fetch_playlist(url: String) -> AppResult<ytdlp::PlaylistInfo> {
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(AppError::Invalid("That doesn't look like a web link.".into()));
+    }
+    ytdlp::fetch_playlist(url).await
+}
+
+#[tauri::command]
 pub async fn list_jobs(state: State<'_, AppState>) -> AppResult<Vec<jobs::Job>> {
     jobs::list(&state.db)
 }
@@ -92,6 +107,12 @@ pub async fn remove_job(jobs: Jobs<'_>, id: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn clear_finished_jobs(jobs: Jobs<'_>) -> AppResult<usize> {
     jobs.clear_finished()
+}
+
+/// Settings → Updates → "Check for updates" for the downloader.
+#[tauri::command]
+pub async fn update_ytdlp(jobs: Jobs<'_>) -> AppResult<jobs::UpdateResult> {
+    jobs.check_ytdlp_update().await
 }
 
 /// The finished file of a job. The UI passes only a job id, never a path, so it can't be used

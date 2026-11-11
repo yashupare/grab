@@ -8,16 +8,20 @@
 //! `job-removed` (id).
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager as _};
+use tauri_plugin_notification::NotificationExt;
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, BufReader},
     sync::{Notify, mpsc},
@@ -68,6 +72,11 @@ pub struct DownloadRequest {
     pub quality: String,
     #[serde(default = "default_audio")]
     pub audio_format: AudioFormat,
+    /// Set when the job is part of a playlist/channel batch, so the UI can group it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_title: Option<String>,
 }
 
 impl DownloadRequest {
@@ -344,18 +353,113 @@ struct Control {
 
 enum Outcome {
     Stopped(Status),
-    Failed(String),
+    /// `message` is shown to the user; `raw` is yt-dlp's stderr (for diagnosis).
+    Failed { message: String, raw: String },
 }
+
+impl Outcome {
+    fn failed(e: AppError) -> Self {
+        Outcome::Failed { message: e.to_string(), raw: String::new() }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateResult {
+    pub before: String,
+    pub after: String,
+    pub updated: bool,
+}
+
+/// Check for a new yt-dlp at most once a day automatically.
+const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 3600);
 
 pub struct Manager {
     app: AppHandle,
     running: Mutex<HashMap<String, Arc<Control>>>,
     wake: Notify,
+    /// While yt-dlp updates itself, no new downloads start.
+    updating: AtomicBool,
+    /// Jobs already retried once after a downloader update (no endless loops).
+    retried: Mutex<HashSet<String>>,
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn update_stamp() -> Option<PathBuf> {
+    crate::toolmgr::dir().map(|d| d.join("ytdlp-last-check"))
+}
+
+fn update_due() -> bool {
+    let last = update_stamp()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    now_secs().saturating_sub(last) >= UPDATE_INTERVAL.as_secs()
 }
 
 impl Manager {
     pub fn new(app: AppHandle) -> Arc<Self> {
-        Arc::new(Self { app, running: Mutex::new(HashMap::new()), wake: Notify::new() })
+        Arc::new(Self {
+            app,
+            running: Mutex::new(HashMap::new()),
+            wake: Notify::new(),
+            updating: AtomicBool::new(false),
+            retried: Mutex::new(HashSet::new()),
+        })
+    }
+
+    /// Update yt-dlp now. Callers must have set `updating`; this clears it and wakes the queue.
+    async fn run_update(&self) -> AppResult<UpdateResult> {
+        let result = async {
+            let tools = ytdlp::tool_paths()?;
+            ytdlp::self_update(&tools).await
+        }
+        .await;
+        if let Some(p) = update_stamp() {
+            let _ = std::fs::write(p, now_secs().to_string());
+        }
+        self.updating.store(false, Ordering::SeqCst);
+        self.wake();
+        let (before, after) = result?;
+        let updated = before != after;
+        if updated {
+            tracing::info!(%before, %after, "yt-dlp updated");
+            let _ = self.app.emit("ytdlp-updated", UpdateResult { before: before.clone(), after: after.clone(), updated });
+        } else {
+            tracing::info!(version = %after, "yt-dlp is up to date");
+        }
+        Ok(UpdateResult { before, after, updated })
+    }
+
+    /// "Check for updates" in Settings. Refuses while downloads run.
+    pub async fn check_ytdlp_update(&self) -> AppResult<UpdateResult> {
+        if !self.running_ids().is_empty() {
+            return Err(AppError::Invalid("Wait for the current downloads to finish, then check again.".into()));
+        }
+        if self.updating.swap(true, Ordering::SeqCst) {
+            return Err(AppError::Invalid("Already checking for updates.".into()));
+        }
+        self.run_update().await
+    }
+
+    fn notify(&self, job: &Job, ok: bool, message: Option<&str>) {
+        let st = self.state();
+        let enabled = settings::load(&st.db, &st.default_settings).map(|s| s.notifications).unwrap_or(true);
+        let focused = self.app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+        if !enabled || focused {
+            return;
+        }
+        let (title, body) = if ok {
+            ("Download finished", job.title.clone())
+        } else {
+            ("Download failed", format!("{}: {}", job.title, message.unwrap_or("something went wrong")))
+        };
+        if let Err(e) = self.app.notification().builder().title(title).body(body).show() {
+            tracing::debug!(error = %e, "notification not shown");
+        }
     }
 
     fn state(&self) -> tauri::State<'_, AppState> {
@@ -375,6 +479,16 @@ impl Manager {
         let n = requeue_running(&self.state().db)?;
         if n > 0 {
             tracing::info!(count = n, "resuming interrupted downloads");
+        }
+        // Daily yt-dlp update check, before any download starts.
+        if update_due() {
+            self.updating.store(true, Ordering::SeqCst);
+            let me = self.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = me.run_update().await {
+                    tracing::warn!(error = %e, "yt-dlp update check failed");
+                }
+            });
         }
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -404,6 +518,9 @@ impl Manager {
 
     /// Start queued jobs until the concurrency limit is reached.
     fn fill(self: &Arc<Self>) {
+        if self.updating.load(Ordering::SeqCst) {
+            return; // run_update() wakes us when it's done
+        }
         let st = self.state();
         let limit = settings::load(&st.db, &st.default_settings).map(|s| s.concurrent_downloads).unwrap_or(3) as usize;
         loop {
@@ -436,26 +553,51 @@ impl Manager {
     async fn run(self: Arc<Self>, job: Job, ctl: Arc<Control>) {
         tracing::info!(id = %job.id, url = %job.url, kind = job.kind.as_str(), "download started");
         let temp = self.temp_dir(&job.id);
-        let outcome = self.execute(&job, &ctl, &temp).await;
+        let mut outcome = self.execute(&job, &ctl, &temp).await;
+
+        // YouTube changed something? Update yt-dlp and try this job once more.
+        let mut retry = false;
+        if let Err(Outcome::Failed { raw, .. }) = &outcome {
+            let first_time = self.retried.lock().map(|mut r| r.insert(job.id.clone())).unwrap_or(false);
+            if ytdlp::looks_outdated(raw) && first_time && !self.updating.swap(true, Ordering::SeqCst) {
+                tracing::info!(id = %job.id, "download failed in a way an update may fix; updating yt-dlp");
+                let _ = self.app.emit("job-progress", JobProgress {
+                    id: job.id.clone(), stage: Stage::Processing, part: 0, fraction: 0.0,
+                    downloaded: None, total: None, speed: None, eta: None, step: Some("UpdateDownloader".into()),
+                });
+                if let Ok(r) = self.run_update().await {
+                    retry = r.updated;
+                }
+                if !retry {
+                    if let Err(Outcome::Failed { message, .. }) = &mut outcome {
+                        *message = format!("{message} (The downloader is already up to date.)");
+                    }
+                }
+            }
+        }
+
         {
             let db = &self.state().db;
             let r = match &outcome {
+                _ if retry => set_status(db, &job.id, Status::Queued, None),
                 Ok((path, size)) => {
                     tracing::info!(id = %job.id, %path, "download finished");
+                    self.notify(&job, true, None);
                     finish(db, &job.id, path, *size)
                 }
                 Err(Outcome::Stopped(s)) => set_status(db, &job.id, *s, None),
-                Err(Outcome::Failed(msg)) => {
-                    tracing::warn!(id = %job.id, error = %msg, "download failed");
-                    set_status(db, &job.id, Status::Failed, Some(msg))
+                Err(Outcome::Failed { message, raw }) => {
+                    tracing::warn!(id = %job.id, error = %message, stderr = %raw, "download failed");
+                    self.notify(&job, false, Some(message));
+                    set_status(db, &job.id, Status::Failed, Some(message))
                 }
             };
             if let Err(e) = r {
                 tracing::error!(id = %job.id, error = %e, "couldn't save job result");
             }
         }
-        // Paused and failed jobs keep their partial files so they can resume.
-        if matches!(outcome, Ok(_) | Err(Outcome::Stopped(Status::Cancelled))) {
+        // Paused, failed and retried jobs keep their partial files so they can resume.
+        if !retry && matches!(outcome, Ok(_) | Err(Outcome::Stopped(Status::Cancelled))) {
             let _ = tokio::fs::remove_dir_all(&temp).await;
         }
         if let Ok(mut m) = self.running.lock() {
@@ -466,7 +608,7 @@ impl Manager {
     }
 
     async fn execute(&self, job: &Job, ctl: &Control, temp: &Path) -> Result<(String, i64), Outcome> {
-        let fail = |e: AppError| Outcome::Failed(e.to_string());
+        let fail = Outcome::failed;
         let tools = ytdlp::tool_paths().map_err(fail)?;
         let s = {
             let st = self.state();
@@ -570,8 +712,11 @@ impl Manager {
                 let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
                 Ok((path, size))
             }
-            (true, None) => Err(Outcome::Failed("The download finished but the file couldn't be found.".into())),
-            (false, _) => Err(Outcome::Failed(ytdlp::friendly_error(&stderr))),
+            (true, None) => Err(Outcome::Failed {
+                message: "The download finished but the file couldn't be found.".into(),
+                raw: stderr,
+            }),
+            (false, _) => Err(Outcome::Failed { message: ytdlp::friendly_error(&stderr), raw: stderr }),
         }
     }
 
@@ -584,6 +729,41 @@ impl Manager {
         self.emit_job(&id);
         self.wake();
         get(&self.state().db, &id)?.ok_or_else(|| AppError::Invalid("job disappeared".into()))
+    }
+
+    /// Queue a batch (playlist/channel selection) in one go. All requests are validated first,
+    /// so a bad item can't leave half a batch queued.
+    pub fn enqueue_many(self: &Arc<Self>, reqs: Vec<DownloadRequest>) -> AppResult<usize> {
+        if reqs.is_empty() {
+            return Err(AppError::Invalid("Pick at least one video.".into()));
+        }
+        for r in &reqs {
+            r.validate()?;
+        }
+        let db = &self.state().db;
+        let ids: Vec<String> = reqs.iter().map(|_| new_id()).collect();
+        let rows: Vec<(String, String)> = reqs
+            .iter()
+            .zip(&ids)
+            .map(|(r, id)| Ok((id.clone(), serde_json::to_string(r)?)))
+            .collect::<AppResult<_>>()?;
+        db.with(|c| {
+            let tx = c.transaction()?;
+            for ((id, json), r) in rows.iter().zip(&reqs) {
+                tx.execute(
+                    "INSERT INTO jobs (id, kind, url, title, thumbnail, request, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued')",
+                    params![id, r.kind.as_str(), r.url, r.title, r.thumbnail, json],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })?;
+        for id in &ids {
+            self.emit_job(id);
+        }
+        self.wake();
+        tracing::info!(count = ids.len(), "batch queued");
+        Ok(ids.len())
     }
 
     fn stop_running(&self, id: &str, reason: Status) -> bool {
@@ -672,6 +852,8 @@ mod tests {
             kind,
             quality: "1080".into(),
             audio_format: AudioFormat::Opus,
+            group_id: None,
+            group_title: None,
         }
     }
 

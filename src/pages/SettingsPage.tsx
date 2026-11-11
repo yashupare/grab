@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, CheckCircle2, FolderOpen, Monitor, Moon, Sun, XCircle } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { AlertTriangle, CheckCircle2, FolderOpen, Monitor, Moon, RefreshCw, Sun, XCircle } from "lucide-react";
+import { Switch } from "../components/ui/Switch";
+import { toast } from "../stores/toasts";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Segmented } from "../components/ui/Segmented";
 import { Button } from "../components/ui/Button";
@@ -27,12 +30,12 @@ const LABELS: Record<SettingsSection, string> = {
 
 /** Settings that exist in the plan but whose feature isn't built yet. */
 const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: string }>> = {
-  general: { milestone: "M4", items: ["Start with Windows", "Keep running in the tray when closed", "Notifications when a download finishes"] },
-  downloads: { milestone: "M1", items: ["Change folders", "File name pattern", "Subtitles and SponsorBlock defaults", "Speed limit"] },
+  general: { milestone: "M4", items: ["Start with Windows", "Keep running in the tray when closed"] },
+  downloads: { milestone: "M2", items: ["File name pattern", "Subtitles and SponsorBlock defaults", "Speed limit"] },
   music: { milestone: "M4", items: ["Add and remove library folders", "Crossfade", "Normalise volume"] },
   tools: { milestone: "M5", items: ["Hardware acceleration", "Default output folder and quality"] },
   spotify: { milestone: "M3", items: ["Connect your Spotify account (Premium) for playlists over 100 songs"] },
-  updates: { milestone: "M6", items: ["App updates", "Downloader (yt-dlp) updates"] },
+  updates: { milestone: "M6", items: ["Automatic updates for Grab itself"] },
   advanced: { milestone: "M1", items: ["Cookies for age-restricted videos", "Proxy", "Copy diagnostics", "Reset app"] },
 };
 
@@ -50,38 +53,80 @@ function Row({ title, description, children }: { title: string; description?: Re
   );
 }
 
-function PathValue({ path }: { path: string }) {
+function PathValue({ path, onChange }: { path: string; onChange?: (p: string) => void }) {
+  async function pick() {
+    const chosen = await openDialog({ directory: true, defaultPath: path, title: "Choose a folder" });
+    if (typeof chosen === "string" && chosen !== path) onChange?.(chosen);
+  }
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="selectable truncate font-mono text-[12.5px] text-muted" title={path}>
+    <div className="flex min-w-0 items-center gap-1">
+      <span className="selectable mr-1 truncate font-mono text-[12.5px] text-muted" title={path}>
         {path}
       </span>
-      <Button size="sm" variant="ghost" icon={<FolderOpen />} onClick={() => revealItemInDir(path)} aria-label={`Show ${path}`}>
+      <Button size="sm" variant="ghost" icon={<FolderOpen />} onClick={() => revealItemInDir(path).catch(() => {})} aria-label={`Show ${path}`}>
         Show
       </Button>
+      {onChange && (
+        <Button size="sm" onClick={() => pick().catch((e) => toast.error(errorMessage(e)))}>
+          Change
+        </Button>
+      )}
     </div>
   );
 }
 
-function GeneralSection() {
-  const setThemeLocal = useUi((s) => s.setTheme);
-  const theme = useUi((s) => s.theme);
-  const update = useUpdateSettings();
+function GeneralSection({ s, save }: { s?: Settings; save: (p: Partial<Settings>) => void }) {
+  const setThemeLocal = useUi((st) => st.setTheme);
+  const theme = useUi((st) => st.theme);
   return (
-    <Row title="Theme" description="Follow Windows, or always use dark or light.">
-      <Segmented<Theme>
-        label="Theme"
-        value={theme}
-        onChange={(t) => {
-          setThemeLocal(t);
-          update.mutate({ theme: t });
-        }}
-        options={[
-          { value: "system", label: "System", icon: Monitor },
-          { value: "dark", label: "Dark", icon: Moon },
-          { value: "light", label: "Light", icon: Sun },
-        ]}
-      />
+    <>
+      <Row title="Theme" description="Follow Windows, or always use dark or light.">
+        <Segmented<Theme>
+          label="Theme"
+          value={theme}
+          onChange={(t) => {
+            setThemeLocal(t);
+            save({ theme: t });
+          }}
+          options={[
+            { value: "system", label: "System", icon: Monitor },
+            { value: "dark", label: "Dark", icon: Moon },
+            { value: "light", label: "Light", icon: Sun },
+          ]}
+        />
+      </Row>
+      {s && (
+        <Row title="Notifications" description="Show a Windows notification when a download finishes while Grab is in the background.">
+          <Switch label="Notifications" checked={s.notifications} onChange={(notifications) => save({ notifications })} />
+        </Row>
+      )}
+    </>
+  );
+}
+
+function UpdatesSection() {
+  const tools = useQuery({ queryKey: ["tools"], queryFn: api.toolStatus, staleTime: 60_000 });
+  const qc = useQueryClient();
+  const check = useMutation({
+    mutationFn: api.updateYtdlp,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["tools"] });
+      if (!r.updated) toast.success(`The downloader is up to date (${r.after}).`);
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const ytdlp = tools.data?.find((t) => t.name === "yt-dlp");
+  return (
+    <Row
+      title="Downloader (yt-dlp)"
+      description="Checked automatically once a day. Sites like YouTube change often; updates keep downloads working."
+    >
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[13px] text-muted">{ytdlp?.version ?? "…"}</span>
+        <Button size="sm" icon={<RefreshCw />} loading={check.isPending} onClick={() => check.mutate()}>
+          Check now
+        </Button>
+      </div>
     </Row>
   );
 }
@@ -90,10 +135,10 @@ function DownloadsSection({ s, save }: { s: Settings; save: (p: Partial<Settings
   return (
     <>
       <Row title="Video folder">
-        <PathValue path={s.videoDir} />
+        <PathValue path={s.videoDir} onChange={(videoDir) => save({ videoDir })} />
       </Row>
       <Row title="Music folder">
-        <PathValue path={s.musicDir} />
+        <PathValue path={s.musicDir} onChange={(musicDir) => save({ musicDir })} />
       </Row>
       <Row title="Default video quality" description="Pre-selected when you open a video. Lower if it's not available.">
         <Segmented<VideoQuality>
@@ -243,7 +288,8 @@ export function SettingsPage() {
           {settings.error && <p className="py-3 text-danger">{errorMessage(settings.error)}</p>}
           {update.error && <p className="py-3 text-danger">{errorMessage(update.error)}</p>}
 
-          {section === "general" && <GeneralSection />}
+          {section === "general" && <GeneralSection s={s} save={(p) => update.mutate(p)} />}
+          {section === "updates" && <UpdatesSection />}
           {section === "downloads" && s && <DownloadsSection s={s} save={(p) => update.mutate(p)} />}
           {section === "music" && s && <MusicSection s={s} />}
           {section === "about" && <AboutSection />}

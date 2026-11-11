@@ -13,6 +13,7 @@ import { Button } from "../components/ui/Button";
 import { toast } from "../stores/toasts";
 import { useUi } from "../stores/ui";
 import { cn } from "../lib/cn";
+import { PlaylistLink } from "./PlaylistLink";
 
 const route = getRouteApi("/link");
 
@@ -29,16 +30,17 @@ export function LinkPage() {
     );
   }
   const d = detectLink(url);
-  if (d.kind.startsWith("spotify") || d.kind === "youtube-playlist" || d.kind === "youtube-channel") {
+  if (d.kind.startsWith("spotify")) {
     return (
       <div className="mx-auto max-w-[720px]">
         <EmptyState icon={Construction} title={`${LINK_LABELS[d.kind]}s are coming soon`}>
-          {d.kind.startsWith("spotify")
-            ? "Importing from Spotify arrives in milestone M3."
-            : "Downloading whole playlists and channels arrives in milestone M2. You can download single videos now."}
+          Importing from Spotify arrives in milestone M3.
         </EmptyState>
       </div>
     );
+  }
+  if (d.kind === "youtube-playlist" || d.kind === "youtube-channel") {
+    return <PlaylistLink key={d.url ?? url} url={d.url ?? url} />;
   }
   return <VideoLink key={d.url ?? url} url={d.url ?? url} />;
 }

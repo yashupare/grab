@@ -96,6 +96,28 @@ export interface DownloadRequest {
   kind: JobKind;
   quality: string;
   audioFormat: AudioFormat;
+  /** Set for playlist/channel batches. */
+  groupId?: string;
+  groupTitle?: string;
+}
+
+// ---- playlists (Rust: ytdlp::PlaylistInfo)
+export interface PlaylistEntry {
+  id: string;
+  url: string;
+  title: string;
+  duration: number | null;
+  thumbnail: string | null;
+  unavailable: boolean;
+}
+export interface PlaylistInfo {
+  id: string;
+  url: string;
+  title: string;
+  channel: string | null;
+  total: number | null;
+  entries: PlaylistEntry[];
+  truncated: boolean;
 }
 
 export interface Job {
@@ -153,6 +175,8 @@ export const api = {
 
   fetchInfo: (url: string) => call<MediaInfo>("fetch_info", { url }),
   enqueueDownload: (request: DownloadRequest) => call<Job>("enqueue_download", { request }),
+  enqueueMany: (requests: DownloadRequest[]) => call<number>("enqueue_many", { requests }),
+  fetchPlaylist: (url: string) => call<PlaylistInfo>("fetch_playlist", { url }),
   listJobs: () => call<Job[]>("list_jobs"),
   pauseJob: (id: string) => call<void>("pause_job", { id }),
   resumeJob: (id: string) => call<void>("resume_job", { id }),
@@ -165,7 +189,15 @@ export const api = {
   onJobProgress: (fn: (p: JobProgress) => void) => on<JobProgress>("job-progress", fn),
   onJobRemoved: (fn: (id: string) => void) => on<string>("job-removed", fn),
   onJobsCleared: (fn: () => void) => on<null>("jobs-cleared", () => fn()),
+  updateYtdlp: () => call<UpdateResult>("update_ytdlp"),
+  onYtdlpUpdated: (fn: (r: UpdateResult) => void) => on<UpdateResult>("ytdlp-updated", fn),
 };
+
+export interface UpdateResult {
+  before: string;
+  after: string;
+  updated: boolean;
+}
 
 function on<T>(event: string, fn: (payload: T) => void): Promise<UnlistenFn> {
   return isTauri() ? listen<T>(event, (e) => fn(e.payload)) : Promise.resolve(() => {});
