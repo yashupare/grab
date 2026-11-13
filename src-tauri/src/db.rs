@@ -41,6 +41,43 @@ const MIGRATIONS: &[&str] = &[
         duration   REAL,
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );",
+    // 4: Spotify import: song → YouTube Music matches, what was imported from where, playlists
+    "CREATE TABLE spotify_matches (
+        spotify_id TEXT PRIMARY KEY NOT NULL,
+        video_id   TEXT,              -- NULL: searched, nothing good found
+        title      TEXT,
+        artists    TEXT NOT NULL DEFAULT '[]',
+        album      TEXT,
+        duration   REAL,
+        thumbnail  TEXT,
+        source     TEXT NOT NULL DEFAULT 'song',
+        score      REAL NOT NULL DEFAULT 0,
+        manual     INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE TABLE spotify_imports (
+        source      TEXT NOT NULL,    -- spotify:playlist:ID
+        track_id    TEXT NOT NULL,
+        job_id      TEXT NOT NULL,
+        file_path   TEXT,             -- set when the download finishes
+        imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (source, track_id)
+    );
+    CREATE TABLE playlists (
+        id         TEXT PRIMARY KEY NOT NULL,
+        name       TEXT NOT NULL,
+        cover      TEXT,
+        source     TEXT UNIQUE,       -- spotify:playlist:ID for imported playlists
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE TABLE playlist_tracks (
+        playlist_id TEXT NOT NULL REFERENCES playlists (id) ON DELETE CASCADE,
+        track_ref   TEXT NOT NULL,    -- spotify:track:ID
+        position    INTEGER NOT NULL,
+        path        TEXT,             -- set when the download finishes
+        PRIMARY KEY (playlist_id, track_ref)
+    );",
 ];
 
 pub struct Db {

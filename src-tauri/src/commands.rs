@@ -11,8 +11,9 @@ use tauri_plugin_opener::OpenerExt;
 use crate::{
     AppState,
     error::{AppError, AppResult},
-    jobs, library,
+    importer, jobs, library, matcher,
     settings::{self, Settings},
+    spotify,
     toolmgr,
     tools::{self, ToolStatus},
     ytdlp,
@@ -78,7 +79,7 @@ pub async fn enqueue_download(jobs: Jobs<'_>, request: jobs::DownloadRequest) ->
 
 #[tauri::command]
 pub async fn enqueue_many(jobs: Jobs<'_>, requests: Vec<jobs::DownloadRequest>) -> AppResult<usize> {
-    jobs.enqueue_many(requests)
+    jobs.enqueue_many(requests).map(|ids| ids.len())
 }
 
 /// Videos in a playlist or channel (flat listing: fast, no per-video details).
@@ -168,4 +169,86 @@ pub async fn tool_status() -> AppResult<Vec<ToolStatus>> {
     tauri::async_runtime::spawn_blocking(tools::status)
         .await
         .map_err(|e| AppError::Invalid(format!("tool check failed: {e}")))
+}
+
+// ---------------------------------------------------------------- Spotify import
+
+/// Songs in a Spotify song/album/playlist link.
+#[tauri::command]
+pub async fn spotify_fetch(url: String) -> AppResult<spotify::Collection> {
+    let link = spotify::parse_link(&url).ok_or_else(|| AppError::Invalid("That isn't a Spotify song, album or playlist link.".into()))?;
+    spotify::fetch(&link).await
+}
+
+/// What was imported from this album/playlist before.
+#[tauri::command]
+pub async fn spotify_import_state(state: State<'_, AppState>, uri: String) -> AppResult<importer::ImportState> {
+    importer::state(&state.db, &uri)
+}
+
+/// Best YouTube Music match for one song (cached).
+#[tauri::command]
+pub async fn spotify_match(state: State<'_, AppState>, track: matcher::Query) -> AppResult<matcher::MatchResult> {
+    matcher::check_query(&track)?;
+    matcher::match_track(&state.db, &track).await
+}
+
+/// Top results for the Fix match dialog, best first.
+#[tauri::command]
+pub async fn spotify_candidates(track: matcher::Query) -> AppResult<Vec<matcher::Candidate>> {
+    matcher::check_query(&track)?;
+    let mut found = matcher::find(&track, true).await?;
+    found.truncate(6);
+    Ok(found)
+}
+
+/// The user's choice in the Fix dialog: a listed candidate, or a pasted YouTube link.
+#[tauri::command]
+pub async fn spotify_set_match(
+    state: State<'_, AppState>,
+    track: matcher::Query,
+    candidate: Option<matcher::Candidate>,
+    link: Option<String>,
+) -> AppResult<matcher::MatchResult> {
+    matcher::check_query(&track)?;
+    let picked = match (candidate, link) {
+        (Some(c), _) if matcher::valid_video_id(&c.video_id) => c,
+        (_, Some(link)) => {
+            let id = matcher::video_id_from(&link).ok_or_else(|| AppError::Invalid("Paste a YouTube or YouTube Music video link.".into()))?;
+            let info = ytdlp::fetch_info(&format!("https://www.youtube.com/watch?v={id}")).await?;
+            matcher::Candidate {
+                video_id: id,
+                title: info.title,
+                artists: info.channel.into_iter().collect(),
+                album: None,
+                duration: info.duration,
+                thumbnail: info.thumbnail,
+                source: matcher::Source::Video,
+                score: 0.0,
+            }
+        }
+        _ => return Err(AppError::Invalid("Pick a result or paste a link.".into())),
+    };
+    let mut picked = picked;
+    picked.score = matcher::score(&track, &picked);
+    matcher::save(&state.db, &track.id, Some(&picked), true)?;
+    Ok(matcher::MatchResult { spotify_id: track.id, status: matcher::MatchStatus::Matched, candidate: Some(picked), manual: true })
+}
+
+/// Queue matched songs as tagged audio downloads (and update the Music playlist).
+#[tauri::command]
+pub async fn spotify_import(state: State<'_, AppState>, jobs: Jobs<'_>, request: importer::ImportRequest) -> AppResult<usize> {
+    importer::import(&state.db, &jobs, request)
+}
+
+/// A 12-second clip of a YouTube Music result, from the middle of the song when it's long enough.
+/// Returns a file path the player can open (the previews folder is allowed for playback).
+#[tauri::command]
+pub async fn preview_clip(app: AppHandle, video_id: String, duration: Option<f64>) -> AppResult<String> {
+    if !matcher::valid_video_id(&video_id) {
+        return Err(AppError::Invalid("Invalid video.".into()));
+    }
+    let start = if duration.unwrap_or(0.0) > 75.0 { 30.0 } else { 0.0 };
+    let path = ytdlp::preview_clip(&video_id, start, &library::previews_dir(&app)).await?;
+    Ok(path.display().to_string())
 }

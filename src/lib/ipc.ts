@@ -147,6 +147,76 @@ export interface PlaylistInfo {
   truncated: boolean;
 }
 
+// ---- Spotify import (Rust: spotify.rs, matcher.rs, importer.rs)
+export type SpotifyKind = "track" | "album" | "playlist";
+export interface SpotifyTrack {
+  id: string;
+  title: string;
+  artists: string[];
+  durationMs: number;
+  explicit: boolean;
+  /** Position in the album/playlist, from 1. */
+  position: number;
+  playable: boolean;
+}
+export interface SpotifyCollection {
+  kind: SpotifyKind;
+  id: string;
+  uri: string;
+  url: string;
+  name: string;
+  owner: string | null;
+  cover: string | null;
+  /** "#rrggbb" picked by Spotify from the cover. */
+  tint: string | null;
+  tracks: SpotifyTrack[];
+  /** Spotify shared only the first 100 songs. */
+  limited: boolean;
+}
+export interface MatchQuery {
+  id: string;
+  title: string;
+  artists: string[];
+  durationMs: number;
+}
+export interface MatchCandidate {
+  videoId: string;
+  title: string;
+  artists: string[];
+  album: string | null;
+  duration: number | null;
+  thumbnail: string | null;
+  source: "song" | "video";
+  score: number;
+}
+export interface MatchResult {
+  spotifyId: string;
+  status: "matched" | "notFound";
+  candidate: MatchCandidate | null;
+  manual: boolean;
+}
+export interface ImportState {
+  lastImport: string | null;
+  tracks: Record<string, { state: "downloaded" | "queued" | "missing"; jobId: string }>;
+  inPlaylist: boolean;
+}
+export interface ImportRequest {
+  collection: { uri: string; kind: SpotifyKind; name: string; owner: string | null; cover: string | null };
+  tracks: {
+    spotifyId: string;
+    title: string;
+    artists: string[];
+    position: number;
+    durationMs: number;
+    videoId: string;
+    album: string | null;
+    thumbnail: string | null;
+  }[];
+  order: string[];
+  audioFormat: AudioFormat;
+  addToPlaylist: boolean;
+}
+
 export interface Job {
   id: string;
   kind: JobKind;
@@ -221,6 +291,20 @@ export const api = {
   saveWatchPosition: (jobId: string, position: number, duration: number | null) =>
     call<void>("save_watch_position", { jobId, position, duration }),
   onYtdlpUpdated: (fn: (r: UpdateResult) => void) => on<UpdateResult>("ytdlp-updated", fn),
+
+  spotifyFetch: (url: string) => call<SpotifyCollection>("spotify_fetch", { url }),
+  spotifyImportState: (uri: string) => call<ImportState>("spotify_import_state", { uri }),
+  spotifyMatch: (track: MatchQuery) => call<MatchResult>("spotify_match", { track }),
+  spotifyCandidates: (track: MatchQuery) => call<MatchCandidate[]>("spotify_candidates", { track }),
+  spotifySetMatch: (track: MatchQuery, pick: { candidate: MatchCandidate } | { link: string }) =>
+    call<MatchResult>("spotify_set_match", {
+      track,
+      candidate: "candidate" in pick ? pick.candidate : null,
+      link: "link" in pick ? pick.link : null,
+    }),
+  spotifyImport: (request: ImportRequest) => call<number>("spotify_import", { request }),
+  /** Local file path of a 12-second clip (play with convertFileSrc). */
+  previewClip: (videoId: string, duration: number | null) => call<string>("preview_clip", { videoId, duration }),
 };
 
 export interface UpdateResult {

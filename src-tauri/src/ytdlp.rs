@@ -84,6 +84,34 @@ pub async fn fetch_info(url: &str) -> AppResult<MediaInfo> {
     summarize(raw)
 }
 
+/// Save a short clip of a song for the in-app preview (Fix match dialog). Stream URLs only work
+/// inside yt-dlp's own session, so the clip is downloaded and played from disk.
+pub async fn preview_clip(video_id: &str, start: f64, dir: &std::path::Path) -> AppResult<PathBuf> {
+    let file = dir.join(format!("{video_id}-{}.m4a", start as u32));
+    if file.is_file() {
+        return Ok(file);
+    }
+    std::fs::create_dir_all(dir)?;
+    let t = tool_paths()?;
+    let mut cmd = command(&t);
+    let url = format!("https://music.youtube.com/watch?v={video_id}");
+    let section = format!("*{}-{}", start as u32, start as u32 + 12);
+    let out_name = format!("{video_id}-{}.%(ext)s", start as u32);
+    cmd.args(["-q", "--no-playlist", "--no-part", "-f", "ba[ext=m4a]/ba[acodec^=mp4a]", "--download-sections", &section])
+        .arg("-P")
+        .arg(dir)
+        .args(["-o", &out_name, "--", &url])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let out = tokio::time::timeout(Duration::from_secs(60), cmd.spawn()?.wait_with_output())
+        .await
+        .map_err(|_| AppError::Network("The preview took too long to load.".into()))??;
+    if !out.status.success() || !file.is_file() {
+        return Err(AppError::Invalid(friendly_error(&String::from_utf8_lossy(&out.stderr))));
+    }
+    Ok(file)
+}
+
 // ---------------------------------------------------------------- playlists & channels
 
 /// Most items listed for one playlist or channel (keeps huge channels responsive).

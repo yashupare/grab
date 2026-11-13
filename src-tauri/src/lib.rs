@@ -1,10 +1,14 @@
 mod commands;
 mod db;
 mod error;
+mod importer;
 mod jobs;
 mod library;
 mod logging;
+mod matcher;
 mod settings;
+mod spotify;
+mod tags;
 mod toolmgr;
 mod tools;
 mod ytdlp;
@@ -65,6 +69,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(s) = settings::load(&db, &default_settings) {
         library::allow_folders(app.handle(), &s);
     }
+    library::reset_previews(app.handle());
 
     app.manage(AppState { db, default_settings, data_dir, log_dir, _log_guard: Mutex::new(guard) });
 
@@ -104,6 +109,13 @@ pub fn run() {
             commands::fetch_playlist,
             commands::video_library,
             commands::save_watch_position,
+            commands::spotify_fetch,
+            commands::spotify_import_state,
+            commands::spotify_match,
+            commands::spotify_candidates,
+            commands::spotify_set_match,
+            commands::spotify_import,
+            commands::preview_clip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

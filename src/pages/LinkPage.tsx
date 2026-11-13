@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownToLine, AudioLines, Check, Clapperboard, Construction, Link2, RotateCw } from "lucide-react";
-import { detectLink, LINK_LABELS } from "../lib/links";
+import { AlertTriangle, ArrowDownToLine, AudioLines, Check, Clapperboard, Link2, RotateCw } from "lucide-react";
+import { detectLink } from "../lib/links";
 import { api, type AudioFormat, type DownloadOptions, type MediaInfo, type Settings } from "../lib/ipc";
 import { DownloadOptionsPanel } from "../components/DownloadOptionsPanel";
 import { formatBytes, formatCount, formatDuration, formatRelative, parseYmd } from "../lib/format";
@@ -15,6 +15,7 @@ import { toast } from "../stores/toasts";
 import { useUi } from "../stores/ui";
 import { cn } from "../lib/cn";
 import { PlaylistLink } from "./PlaylistLink";
+import { SpotifyLink } from "./SpotifyLink";
 
 const route = getRouteApi("/link");
 
@@ -32,13 +33,7 @@ export function LinkPage() {
   }
   const d = detectLink(url);
   if (d.kind.startsWith("spotify")) {
-    return (
-      <div className="mx-auto max-w-[720px]">
-        <EmptyState icon={Construction} title={`${LINK_LABELS[d.kind]}s are coming soon`}>
-          Importing from Spotify arrives in milestone M3.
-        </EmptyState>
-      </div>
-    );
+    return <SpotifyLink key={d.url ?? url} url={d.url ?? url} />;
   }
   if (d.kind === "youtube-playlist" || d.kind === "youtube-channel") {
     return <PlaylistLink key={d.url ?? url} url={d.url ?? url} />;
@@ -67,7 +62,12 @@ function Skeleton() {
 }
 
 function VideoLink({ url }: { url: string }) {
-  const info = useQuery({ queryKey: ["info", url], queryFn: () => api.fetchInfo(url), staleTime: 10 * 60_000, retry: false });
+  const info = useQuery({
+    queryKey: ["info", url],
+    queryFn: () => api.fetchInfo(url),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
   const settings = useSettings();
 
   return (
@@ -104,7 +104,9 @@ function Preview({ info, settings }: { info: MediaInfo; settings: Settings }) {
     <>
       <div className="flex gap-5">
         <div className="relative aspect-video w-72 shrink-0 overflow-hidden rounded-lg bg-surface-2">
-          {info.thumbnail && <img src={info.thumbnail} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />}
+          {info.thumbnail && (
+            <img src={info.thumbnail} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />
+          )}
           {info.duration != null && (
             <span className="absolute right-2 bottom-2 rounded bg-black/75 px-1.5 py-0.5 text-[12px] font-medium text-white tabular">
               {formatDuration(info.duration)}
@@ -113,7 +115,9 @@ function Preview({ info, settings }: { info: MediaInfo; settings: Settings }) {
         </div>
         <div className="min-w-0 pt-1">
           <span className="text-[12px] font-medium tracking-[0.06em] text-faint uppercase">{info.site}</span>
-          <h1 className="selectable mt-1 line-clamp-3 text-[20px] leading-[26px] font-semibold tracking-[-0.01em]">{info.title}</h1>
+          <h1 className="selectable mt-1 line-clamp-3 text-[20px] leading-[26px] font-semibold tracking-[-0.01em]">
+            {info.title}
+          </h1>
           <p className="mt-2 text-muted">{meta.join(" · ")}</p>
         </div>
       </div>
@@ -199,16 +203,20 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
             { value: "audio" as const, label: "Audio only", icon: AudioLines },
           ]}
         />
-        <span className="text-[13px] text-muted">
-          Saves to {kind === "video" ? "Videos" : "Music"} › Grab
-        </span>
+        <span className="text-[13px] text-muted">Saves to {kind === "video" ? "Videos" : "Music"} › Grab</span>
       </div>
 
-      <div role="radiogroup" aria-label={kind === "video" ? "Video quality" : "Audio format"} className="flex flex-col p-2">
+      <div
+        role="radiogroup"
+        aria-label={kind === "video" ? "Video quality" : "Audio format"}
+        className="flex flex-col p-2"
+      >
         {kind === "video"
           ? info.video.map((v) => {
               const id = String(v.height);
-              const tags = [v.height >= 4320 ? "8K" : v.height >= 2160 ? "4K" : null, v.hdr ? "HDR" : null].filter(Boolean) as string[];
+              const tags = [v.height >= 4320 ? "8K" : v.height >= 2160 ? "4K" : null, v.hdr ? "HDR" : null].filter(
+                Boolean,
+              ) as string[];
               return (
                 <OptionRow
                   key={id}
@@ -222,11 +230,24 @@ function FormatPicker({ info, settings }: { info: MediaInfo; settings: Settings 
               );
             })
           : info.audio.map((a) => (
-              <OptionRow key={a.id} checked={audio === a.id} onSelect={() => setAudio(a.id)} title={a.label} detail={a.detail} size={a.size} />
+              <OptionRow
+                key={a.id}
+                checked={audio === a.id}
+                onSelect={() => setAudio(a.id)}
+                title={a.label}
+                detail={a.detail}
+                size={a.size}
+              />
             ))}
       </div>
 
-      <DownloadOptionsPanel info={info} kind={kind} value={options} onChange={setOptions} onSectionError={setSectionError} />
+      <DownloadOptionsPanel
+        info={info}
+        kind={kind}
+        value={options}
+        onChange={setOptions}
+        onSectionError={setSectionError}
+      />
 
       <div className="flex items-center justify-between gap-4 border-t border-line px-5 py-4">
         <span className={cn("text-[13px]", sectionError ? "text-danger" : "text-muted")}>
@@ -291,7 +312,10 @@ function OptionRow({
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="font-semibold">{title}</span>
         {tags.map((t) => (
-          <span key={t} className="rounded border border-current px-1 text-[10.5px] leading-4 font-semibold text-accent">
+          <span
+            key={t}
+            className="rounded border border-current px-1 text-[10.5px] leading-4 font-semibold text-accent"
+          >
             {t}
           </span>
         ))}

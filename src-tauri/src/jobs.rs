@@ -31,7 +31,9 @@ use crate::{
     AppState,
     db::Db,
     error::{AppError, AppResult},
+    importer,
     settings::{self, AudioFormat, SponsorBlock},
+    tags::{self, TrackTags},
     ytdlp,
 };
 
@@ -128,11 +130,20 @@ pub struct DownloadRequest {
     /// Length in seconds when known at queue time (for the library).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
+    /// Song details written into the file after download (Spotify imports). Audio only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<TrackTags>,
 }
 
 impl DownloadRequest {
     fn validate(&self) -> AppResult<()> {
         self.options.validate()?;
+        if let Some(t) = &self.tags {
+            if self.kind != Kind::Audio {
+                return Err(AppError::Invalid("Song details only apply to audio downloads.".into()));
+            }
+            t.validate()?;
+        }
         if !(self.url.starts_with("https://") || self.url.starts_with("http://")) {
             return Err(AppError::Invalid("That doesn't look like a web link.".into()));
         }
@@ -361,7 +372,10 @@ pub fn download_args(req: &DownloadRequest, dir: &Path, temp: &Path, template: &
                 AudioFormat::Mp3 => &["-f", "ba", "-x", "--audio-format", "mp3", "--audio-quality", "192K"],
             };
             a.extend(fmt.iter().map(|s| s.to_string()));
-            a.extend(["--embed-thumbnail", "--convert-thumbnails", "jpg"].map(String::from));
+            // Imported songs get their cover from Spotify/YouTube Music afterwards (tags.rs).
+            if req.tags.is_none() {
+                a.extend(["--embed-thumbnail", "--convert-thumbnails", "jpg"].map(String::from));
+            }
         }
     }
     a.extend(option_args(req));
@@ -718,8 +732,9 @@ impl Manager {
         std::fs::create_dir_all(&dir).map_err(|e| fail(e.into()))?;
         std::fs::create_dir_all(temp).map_err(|e| fail(e.into()))?;
 
+        let template = job.request.tags.as_ref().map(TrackTags::file_template).unwrap_or_else(|| s.filename_template.clone());
         let mut cmd = ytdlp::command(&tools);
-        cmd.args(download_args(&job.request, &dir, temp, &s.filename_template))
+        cmd.args(download_args(&job.request, &dir, temp, &template))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| fail(e.into()))?;
@@ -806,6 +821,19 @@ impl Manager {
         let stderr: String = errors.into_iter().collect::<Vec<_>>().join("\n");
         match (status.success(), final_path) {
             (true, Some(path)) => {
+                if let Some(t) = &job.request.tags {
+                    let _ = self.app.emit("job-progress", JobProgress {
+                        id: job.id.clone(), stage: Stage::Processing, part, fraction: 1.0,
+                        downloaded: None, total: None, speed: None, eta: None, step: Some("Tagging".into()),
+                    });
+                    // A file without tags is still a good download: log and carry on.
+                    if let Err(e) = tags::apply(Path::new(&path), t).await {
+                        tracing::warn!(id = %job.id, %path, error = %e, "couldn't tag file");
+                    }
+                    if let Err(e) = importer::complete(&self.state().db, t, &path) {
+                        tracing::warn!(id = %job.id, error = %e, "couldn't record import");
+                    }
+                }
                 let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
                 Ok((path, size))
             }
@@ -830,7 +858,7 @@ impl Manager {
 
     /// Queue a batch (playlist/channel selection) in one go. All requests are validated first,
     /// so a bad item can't leave half a batch queued.
-    pub fn enqueue_many(self: &Arc<Self>, reqs: Vec<DownloadRequest>) -> AppResult<usize> {
+    pub fn enqueue_many(self: &Arc<Self>, reqs: Vec<DownloadRequest>) -> AppResult<Vec<String>> {
         if reqs.is_empty() {
             return Err(AppError::Invalid("Pick at least one video.".into()));
         }
@@ -860,7 +888,7 @@ impl Manager {
         }
         self.wake();
         tracing::info!(count = ids.len(), "batch queued");
-        Ok(ids.len())
+        Ok(ids)
     }
 
     fn stop_running(&self, id: &str, reason: Status) -> bool {
@@ -953,6 +981,7 @@ mod tests {
             group_title: None,
             options: DownloadOptions::default(),
             duration: None,
+            tags: None,
         }
     }
 
@@ -1019,6 +1048,14 @@ mod tests {
         let s = download_args(&r, Path::new("C:/M"), Path::new("C:/T"), "x").join(" ");
         assert!(s.contains("-x --audio-format m4a") && s.contains("--embed-thumbnail"));
         assert!(!s.contains("-S "));
+
+        // Imported songs: cover comes from tags, not the video thumbnail.
+        r.tags = Some(TrackTags { title: "Song".into(), ..TrackTags::default() });
+        let s = download_args(&r, Path::new("C:/M"), Path::new("C:/T"), "x").join(" ");
+        assert!(!s.contains("--embed-thumbnail"));
+        assert!(r.validate().is_ok());
+        r.kind = Kind::Video;
+        assert!(r.validate().is_err(), "tags are audio only");
     }
 
     #[test]

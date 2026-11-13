@@ -44,6 +44,21 @@ pub fn allow_folders(app: &AppHandle, s: &Settings) {
     }
 }
 
+/// Short song clips for the Fix match dialog. Emptied at every start.
+pub fn previews_dir(app: &AppHandle) -> std::path::PathBuf {
+    let base = app.path().app_local_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("Grab"));
+    base.join("previews")
+}
+
+pub fn reset_previews(app: &AppHandle) {
+    let dir = previews_dir(app);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = app.asset_protocol_scope().allow_directory(&dir, false) {
+        tracing::warn!(error = %e, "couldn't allow previews folder");
+    }
+}
+
 fn positions(db: &Db) -> AppResult<std::collections::HashMap<String, f64>> {
     db.with(|c| {
         let mut stmt = c.prepare("SELECT job_id, position FROM watch_progress")?;
