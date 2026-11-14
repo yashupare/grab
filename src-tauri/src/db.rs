@@ -78,6 +78,30 @@ const MIGRATIONS: &[&str] = &[
         path        TEXT,             -- set when the download finishes
         PRIMARY KEY (playlist_id, track_ref)
     );",
+    // 5: music library (songs found in the library folders) and liked songs
+    "CREATE TABLE tracks (
+        id           INTEGER PRIMARY KEY,
+        path         TEXT NOT NULL UNIQUE,
+        size         INTEGER NOT NULL,
+        mtime        INTEGER NOT NULL,     -- seconds; with size, decides whether to re-read tags
+        title        TEXT NOT NULL,
+        artist       TEXT NOT NULL,        -- as tagged, e.g. 'Pitbull, Sensato'
+        album        TEXT,
+        album_artist TEXT,
+        track_no     INTEGER,
+        disc_no      INTEGER,
+        year         INTEGER,
+        genre        TEXT,
+        duration     REAL NOT NULL DEFAULT 0,
+        bitrate      INTEGER,
+        format       TEXT NOT NULL,
+        cover        TEXT,                 -- image path (cover cache or a folder.jpg)
+        added_at     TEXT NOT NULL
+    );
+    CREATE TABLE likes (
+        path     TEXT PRIMARY KEY NOT NULL, -- by path, so likes survive a rescan
+        liked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );",
 ];
 
 pub struct Db {

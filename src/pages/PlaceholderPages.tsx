@@ -1,11 +1,10 @@
-import { getRouteApi, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Tabs } from "radix-ui";
 import {
   ArrowDownToLine,
   CheckCircle2,
   FileSearch,
   Layers,
-  Music2,
   Repeat2,
   Scissors,
   Shrink,
@@ -46,7 +45,9 @@ export function ActivityPage() {
   const clear = () =>
     api
       .clearFinishedJobs()
-      .then((n) => toast.info(n ? `Cleared ${n} finished item${n === 1 ? "" : "s"}. Files are kept.` : "Nothing to clear."))
+      .then((n) =>
+        toast.info(n ? `Cleared ${n} finished item${n === 1 ? "" : "s"}. Files are kept.` : "Nothing to clear."),
+      )
       .catch((e) => toast.error(errorMessage(e)));
   return (
     <>
@@ -63,48 +64,37 @@ export function ActivityPage() {
         {(t) => (
           <div className="pt-2">
             {t === "In progress" && (
-              <JobList filter="active" empty={{ icon: ArrowDownToLine, title: "Nothing downloading", text: "Paste a link anywhere to start a download." }} />
+              <JobList
+                filter="active"
+                empty={{
+                  icon: ArrowDownToLine,
+                  title: "Nothing downloading",
+                  text: "Paste a link anywhere to start a download.",
+                }}
+              />
             )}
             {t === "Completed" && (
-              <JobList filter="done" empty={{ icon: CheckCircle2, title: "Nothing finished yet", text: "Finished downloads are listed here." }} />
+              <JobList
+                filter="done"
+                empty={{
+                  icon: CheckCircle2,
+                  title: "Nothing finished yet",
+                  text: "Finished downloads are listed here.",
+                }}
+              />
             )}
             {t === "Failed" && (
-              <JobList filter="failed" empty={{ icon: CheckCircle2, title: "No problems", text: "Failed or cancelled downloads show up here." }} />
+              <JobList
+                filter="failed"
+                empty={{
+                  icon: CheckCircle2,
+                  title: "No problems",
+                  text: "Failed or cancelled downloads show up here.",
+                }}
+              />
             )}
           </div>
         )}
-      </PageTabs>
-    </>
-  );
-}
-
-const musicRoute = getRouteApi("/music");
-
-export function MusicPage() {
-  const { q } = musicRoute.useSearch();
-  return (
-    <>
-      <PageHeader title="Music" subtitle={q ? `Results for "${q}"` : "Your songs, albums, artists and playlists"} />
-      <PageTabs tabs={["Songs", "Albums", "Artists", "Liked"]}>
-        {() =>
-          q ? (
-            <EmptyState icon={FileSearch} title="No matches">
-              The music library is built in M4.
-            </EmptyState>
-          ) : (
-            <EmptyState
-              icon={Music2}
-              title="Your library is empty"
-              action={
-                <Link to="/link" search={{ url: "" }}>
-                  <Button variant="primary">Import from Spotify</Button>
-                </Link>
-              }
-            >
-              Songs you save from Spotify or download as audio show up here.
-            </EmptyState>
-          )
-        }
       </PageTabs>
     </>
   );
@@ -130,7 +120,9 @@ export function ToolsPage() {
             <div>
               <div className="flex items-center gap-2 font-semibold">
                 {name}
-                <span className="rounded-full bg-surface-3 px-2 py-px text-[11px] font-medium text-muted">Coming in M5</span>
+                <span className="rounded-full bg-surface-3 px-2 py-px text-[11px] font-medium text-muted">
+                  Coming in M5
+                </span>
               </div>
               <p className="mt-1 text-muted">{description}</p>
             </div>

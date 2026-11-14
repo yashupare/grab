@@ -14,7 +14,16 @@ import { errorMessage, useSettings, useUpdateSettings } from "../hooks/useSettin
 import { api, type AudioFormat, type Settings, type SponsorBlock, type Theme, type VideoQuality } from "../lib/ipc";
 import { cn } from "../lib/cn";
 
-export const SETTINGS_SECTIONS = ["general", "downloads", "music", "tools", "spotify", "updates", "advanced", "about"] as const;
+export const SETTINGS_SECTIONS = [
+  "general",
+  "downloads",
+  "music",
+  "tools",
+  "spotify",
+  "updates",
+  "advanced",
+  "about",
+] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const LABELS: Record<SettingsSection, string> = {
@@ -32,7 +41,7 @@ const LABELS: Record<SettingsSection, string> = {
 const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: string }>> = {
   general: { milestone: "M4", items: ["Start with Windows", "Keep running in the tray when closed"] },
   downloads: { milestone: "M6", items: ["File name pattern", "Speed limit"] },
-  music: { milestone: "M4", items: ["Add and remove library folders", "Crossfade", "Normalise volume"] },
+  music: { milestone: "a later version", items: ["Normalise volume"] },
   tools: { milestone: "M5", items: ["Hardware acceleration", "Default output folder and quality"] },
   spotify: { milestone: "M3", items: ["Connect your Spotify account (Premium) for playlists over 100 songs"] },
   updates: { milestone: "M6", items: ["Automatic updates for Grab itself"] },
@@ -63,7 +72,13 @@ function PathValue({ path, onChange }: { path: string; onChange?: (p: string) =>
       <span className="selectable mr-1 truncate font-mono text-[12.5px] text-muted" title={path}>
         {path}
       </span>
-      <Button size="sm" variant="ghost" icon={<FolderOpen />} onClick={() => revealItemInDir(path).catch(() => {})} aria-label={`Show ${path}`}>
+      <Button
+        size="sm"
+        variant="ghost"
+        icon={<FolderOpen />}
+        onClick={() => revealItemInDir(path).catch(() => {})}
+        aria-label={`Show ${path}`}
+      >
         Show
       </Button>
       {onChange && (
@@ -96,8 +111,15 @@ function GeneralSection({ s, save }: { s?: Settings; save: (p: Partial<Settings>
         />
       </Row>
       {s && (
-        <Row title="Notifications" description="Show a Windows notification when a download finishes while Grab is in the background.">
-          <Switch label="Notifications" checked={s.notifications} onChange={(notifications) => save({ notifications })} />
+        <Row
+          title="Notifications"
+          description="Show a Windows notification when a download finishes while Grab is in the background."
+        >
+          <Switch
+            label="Notifications"
+            checked={s.notifications}
+            onChange={(notifications) => save({ notifications })}
+          />
         </Row>
       )}
     </>
@@ -183,7 +205,10 @@ function DownloadsSection({ s, save }: { s: Settings; save: (p: Partial<Settings
           options={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: n }))}
         />
       </Row>
-      <Row title="Sponsor segments" description="Default for YouTube videos. Uses SponsorBlock, where viewers mark sponsor reads.">
+      <Row
+        title="Sponsor segments"
+        description="Default for YouTube videos. Uses SponsorBlock, where viewers mark sponsor reads."
+      >
         <Segmented<SponsorBlock>
           label="Sponsor segments default"
           value={s.sponsorblock}
@@ -195,7 +220,10 @@ function DownloadsSection({ s, save }: { s: Settings; save: (p: Partial<Settings
           ]}
         />
       </Row>
-      <Row title="Subtitle languages" description="Pre-selected when a video has them. Language codes, e.g. en, hi, es.">
+      <Row
+        title="Subtitle languages"
+        description="Pre-selected when a video has them. Language codes, e.g. en, hi, es."
+      >
         <LangInput value={s.subtitleLangs} onSave={(subtitleLangs) => save({ subtitleLangs })} />
       </Row>
     </>
@@ -208,7 +236,14 @@ function LangInput({ value, onSave }: { value: string[]; onSave: (v: string[]) =
   const [text, setText] = useState(value.join(", "));
   const [error, setError] = useState(false);
   function commit() {
-    const codes = [...new Set(text.split(/[\s,]+/).map((c) => c.trim().toLowerCase()).filter(Boolean))];
+    const codes = [
+      ...new Set(
+        text
+          .split(/[\s,]+/)
+          .map((c) => c.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ];
     const bad = codes.some((c) => !LANG.test(c));
     setError(bad);
     if (!bad && codes.join(",") !== value.join(",")) onSave(codes);
@@ -230,15 +265,80 @@ function LangInput({ value, onSave }: { value: string[]; onSave: (v: string[]) =
   );
 }
 
-function MusicSection({ s }: { s: Settings }) {
+const CROSSFADES = [0, 2, 4, 6, 8, 12] as const;
+
+function MusicSection({ s, save }: { s: Settings; save: (p: Partial<Settings>) => void }) {
+  const lib = useQuery({ queryKey: ["library"], queryFn: api.libraryTracks, staleTime: Infinity });
+  const extra = s.libraryDirs.filter((d) => d.toLowerCase() !== s.musicDir.toLowerCase());
+  async function add() {
+    const chosen = await openDialog({ directory: true, title: "Add a music folder" });
+    if (typeof chosen !== "string") return;
+    if ([s.musicDir, ...s.libraryDirs].some((d) => d.toLowerCase() === chosen.toLowerCase())) {
+      toast.info("That folder is already in your library.");
+      return;
+    }
+    save({ libraryDirs: [...s.libraryDirs, chosen] });
+    toast.success("Folder added. Looking for songs…");
+  }
   return (
-    <Row title="Library folders" description="Songs in these folders appear in Music.">
-      <div className="flex min-w-0 flex-col items-end gap-1">
-        {s.libraryDirs.map((d) => (
-          <PathValue key={d} path={d} />
-        ))}
-      </div>
-    </Row>
+    <>
+      <Row
+        title="Library folders"
+        description={
+          <>
+            Songs in these folders (and their subfolders) appear in Music. Your download folder is always included.
+            {lib.data && ` ${lib.data.tracks.length} songs found${lib.data.scanning ? ", still looking…" : "."}`}
+          </>
+        }
+      >
+        <div className="flex min-w-0 flex-col items-end gap-1.5">
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="selectable truncate font-mono text-[12.5px] text-muted" title={s.musicDir}>
+              {s.musicDir}
+            </span>
+            <span className="rounded bg-surface-3 px-1.5 text-[11px] font-medium text-muted">Downloads</span>
+          </div>
+          {extra.map((d) => (
+            <div key={d} className="flex min-w-0 items-center gap-1">
+              <span className="selectable truncate font-mono text-[12.5px] text-muted" title={d}>
+                {d}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => save({ libraryDirs: s.libraryDirs.filter((x) => x !== d) })}
+                aria-label={`Remove ${d}`}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <div className="mt-1 flex gap-2">
+            <Button
+              size="sm"
+              icon={<RefreshCw />}
+              onClick={() => api.libraryRescan().then(() => toast.info("Scanning your music folders…"))}
+            >
+              Scan again
+            </Button>
+            <Button size="sm" icon={<FolderOpen />} onClick={() => add().catch((e) => toast.error(errorMessage(e)))}>
+              Add folder
+            </Button>
+          </div>
+        </div>
+      </Row>
+      <Row
+        title="Crossfade"
+        description="Fade each song into the next. Off plays each song to its end, then starts the next."
+      >
+        <Segmented<string>
+          label="Crossfade"
+          value={String(s.crossfade)}
+          onChange={(v) => save({ crossfade: Number(v) })}
+          options={CROSSFADES.map((c) => ({ value: String(c), label: c === 0 ? "Off" : `${c} s` }))}
+        />
+      </Row>
+    </>
   );
 }
 
@@ -334,7 +434,7 @@ export function SettingsPage() {
           {section === "general" && <GeneralSection s={s} save={(p) => update.mutate(p)} />}
           {section === "updates" && <UpdatesSection />}
           {section === "downloads" && s && <DownloadsSection s={s} save={(p) => update.mutate(p)} />}
-          {section === "music" && s && <MusicSection s={s} />}
+          {section === "music" && s && <MusicSection s={s} save={(p) => update.mutate(p)} />}
           {section === "about" && <AboutSection />}
 
           {planned && (
@@ -342,7 +442,10 @@ export function SettingsPage() {
               <p className="mb-3 text-[13px] text-muted">Coming in {planned.milestone}:</p>
               <ul className="flex flex-col gap-2">
                 {planned.items.map((i) => (
-                  <li key={i} className="flex items-center gap-2 text-muted before:size-1.5 before:rounded-full before:bg-faint">
+                  <li
+                    key={i}
+                    className="flex items-center gap-2 text-muted before:size-1.5 before:rounded-full before:bg-faint"
+                  >
                     {i}
                   </li>
                 ))}

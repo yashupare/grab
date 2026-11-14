@@ -495,11 +495,21 @@ function SpotifyView({ coll, settings }: { coll: SpotifyCollection; settings: Se
 
       {inLibrary > 0 && (
         <p className="mt-3 text-center text-[13px] text-faint">
-          Imported songs play in{" "}
-          <Link to="/music" search={{ q: "" }} className="text-muted underline-offset-2 hover:underline">
-            Music
-          </Link>{" "}
-          once the music library arrives (M4). Until then they're in your Music › Grab folder.
+          Imported songs are in{" "}
+          {imports.data?.inPlaylist ? (
+            <Link
+              to="/music/playlist/$id"
+              params={{ id: coll.uri }}
+              className="text-muted underline-offset-2 hover:underline"
+            >
+              the playlist {coll.name}
+            </Link>
+          ) : (
+            <Link to="/music" className="text-muted underline-offset-2 hover:underline">
+              Music
+            </Link>
+          )}
+          .
         </p>
       )}
 

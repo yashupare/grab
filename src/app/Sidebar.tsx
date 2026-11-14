@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { createPlaylist, nextPlaylistName, usePlaylists } from "../hooks/usePlaylists";
+import { Mosaic } from "../components/music/Cover";
 import { Heart, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { Tooltip } from "radix-ui";
 import { NAV, SETTINGS_NAV, type NavItem } from "./nav";
@@ -54,7 +56,11 @@ function NavLink({ item, collapsed, badge }: { item: NavItem; collapsed: boolean
     <Tooltip.Root>
       <Tooltip.Trigger asChild>{link}</Tooltip.Trigger>
       <Tooltip.Portal>
-        <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded-md bg-surface-3 px-2.5 py-1.5 text-xs text-fg shadow-(--shadow-float)">
+        <Tooltip.Content
+          side="right"
+          sideOffset={8}
+          className="z-50 rounded-md bg-surface-3 px-2.5 py-1.5 text-xs text-fg shadow-(--shadow-float)"
+        >
           {item.label}
         </Tooltip.Content>
       </Tooltip.Portal>
@@ -62,11 +68,55 @@ function NavLink({ item, collapsed, badge }: { item: NavItem; collapsed: boolean
   );
 }
 
+/** Liked Songs and playlists: small art + name. */
+function SideLink({
+  label,
+  art,
+  collapsed,
+  ...link
+}: { label: string; art: React.ReactNode; collapsed: boolean } & (
+  | { to: "/music"; search: { tab: "liked" }; params?: never }
+  | { to: "/music/playlist/$id"; params: { id: string }; search?: never }
+)) {
+  const a = (
+    <Link
+      {...link}
+      activeOptions={{ includeSearch: true }}
+      className={cn(
+        "flex h-10 items-center gap-2.5 rounded-md px-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg data-[status=active]:bg-surface-2 data-[status=active]:text-fg",
+        collapsed && "justify-center px-0",
+      )}
+    >
+      <span className="size-7 shrink-0 overflow-hidden rounded">{art}</span>
+      {!collapsed && <span className="truncate text-[13.5px] font-medium">{label}</span>}
+    </Link>
+  );
+  if (!collapsed) return a;
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>{a}</Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content
+          side="right"
+          sideOffset={8}
+          className="z-50 rounded-md bg-surface-3 px-2.5 py-1.5 text-xs text-fg shadow-(--shadow-float)"
+        >
+          {label}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
 export function Sidebar() {
+  const playlists = usePlaylists();
+  const navigate = useNavigate();
   const { sidebarCollapsed, toggleSidebar } = useUi();
   const narrow = useNarrow();
   const collapsed = sidebarCollapsed || narrow;
-  const activeCount = useJobs((s) => Object.values(s.jobs).filter((j) => j.status === "running" || j.status === "queued").length);
+  const activeCount = useJobs(
+    (s) => Object.values(s.jobs).filter((j) => j.status === "running" || j.status === "queued").length,
+  );
 
   return (
     <nav
@@ -78,7 +128,12 @@ export function Sidebar() {
     >
       <div className="flex flex-col gap-0.5">
         {NAV.map((item) => (
-          <NavLink key={item.to} item={item} collapsed={collapsed} badge={item.to === "/activity" ? activeCount : undefined} />
+          <NavLink
+            key={item.to}
+            item={item}
+            collapsed={collapsed}
+            badge={item.to === "/activity" ? activeCount : undefined}
+          />
         ))}
       </div>
 
@@ -86,13 +141,40 @@ export function Sidebar() {
         {!collapsed && (
           <div className="mb-1 flex items-center justify-between pr-1 pl-2.5">
             <span className="text-[12px] font-medium tracking-[0.06em] text-faint uppercase">Playlists</span>
-            <IconButton label="New playlist" size="sm" disabled>
+            <IconButton
+              label="New playlist"
+              size="sm"
+              onClick={async () => {
+                const id = await createPlaylist(nextPlaylistName(playlists.data ?? []));
+                if (id) navigate({ to: "/music/playlist/$id", params: { id } });
+              }}
+            >
               <Plus />
             </IconButton>
           </div>
         )}
         <div className="flex flex-col gap-0.5 overflow-y-auto">
-          <NavLink item={{ to: "/music", label: "Liked Songs", icon: Heart }} collapsed={collapsed} />
+          <SideLink
+            to="/music"
+            search={{ tab: "liked" }}
+            label="Liked Songs"
+            collapsed={collapsed}
+            art={
+              <span className="grid size-full place-items-center bg-accent-soft text-accent">
+                <Heart className="size-4 fill-current" />
+              </span>
+            }
+          />
+          {playlists.data?.map((p) => (
+            <SideLink
+              key={p.id}
+              to="/music/playlist/$id"
+              params={{ id: p.id }}
+              label={p.name}
+              collapsed={collapsed}
+              art={<Mosaic covers={p.covers} className="size-full" />}
+            />
+          ))}
         </div>
       </div>
 
@@ -107,7 +189,11 @@ export function Sidebar() {
             )}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? <PanelLeftOpen className="size-5" strokeWidth={1.75} /> : <PanelLeftClose className="size-5" strokeWidth={1.75} />}
+            {collapsed ? (
+              <PanelLeftOpen className="size-5" strokeWidth={1.75} />
+            ) : (
+              <PanelLeftClose className="size-5" strokeWidth={1.75} />
+            )}
             {!collapsed && <span className="text-[13px]">Collapse</span>}
           </button>
         )}

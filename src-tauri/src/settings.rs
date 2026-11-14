@@ -60,6 +60,8 @@ pub struct Settings {
     pub sponsorblock: SponsorBlock,
     /// Subtitle languages to pre-select when a video has them, e.g. ["en"].
     pub subtitle_langs: Vec<String>,
+    /// Seconds songs overlap in the music player (0 = off, up to 12).
+    pub crossfade: u8,
 }
 
 impl Default for Settings {
@@ -77,6 +79,7 @@ impl Default for Settings {
             notifications: true,
             sponsorblock: SponsorBlock::Off,
             subtitle_langs: Vec::new(),
+            crossfade: 0,
         }
     }
 }
@@ -94,6 +97,12 @@ impl Settings {
             if !dir.is_empty() && !std::path::Path::new(dir).is_absolute() {
                 return Err(AppError::Invalid(format!("{name} must be a full path, like C:\\Users\\you\\Videos.")));
             }
+        }
+        if self.crossfade > 12 {
+            return Err(AppError::Invalid("Crossfade can be at most 12 seconds.".into()));
+        }
+        if self.library_dirs.len() > 50 || self.library_dirs.iter().any(|d| !std::path::Path::new(d).is_absolute()) {
+            return Err(AppError::Invalid("Library folders must be full paths, like D:\\Music.".into()));
         }
         let t = self.filename_template.trim();
         if t.is_empty() || t.contains("..") || t.contains(':') {

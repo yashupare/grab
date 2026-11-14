@@ -21,6 +21,8 @@ export interface Settings {
   notifications: boolean;
   sponsorblock: SponsorBlock;
   subtitleLangs: string[];
+  /** Seconds of overlap between songs, 0–12. */
+  crossfade: number;
 }
 
 export interface DownloadOptions {
@@ -217,6 +219,49 @@ export interface ImportRequest {
   addToPlaylist: boolean;
 }
 
+// ---- music library (Rust: music.rs)
+export interface Track {
+  id: number;
+  path: string;
+  title: string;
+  /** As tagged: "Pitbull, Sensato". */
+  artist: string;
+  artists: string[];
+  album: string | null;
+  albumArtist: string | null;
+  trackNo: number | null;
+  discNo: number | null;
+  year: number | null;
+  genre: string | null;
+  /** Seconds. */
+  duration: number;
+  format: string;
+  /** Image file path (play/show with convertFileSrc). */
+  cover: string | null;
+  addedAt: string;
+  liked: boolean;
+}
+export interface LibraryData {
+  tracks: Track[];
+  scanning: boolean;
+}
+
+export interface PlaylistSummary {
+  id: string;
+  name: string;
+  /** spotify:playlist:ID when imported. */
+  source: string | null;
+  covers: string[];
+  count: number;
+  duration: number;
+  updatedAt: string;
+}
+export interface PlaylistDetail extends PlaylistSummary {
+  tracks: Track[];
+  /** Entries not in the library (deleted, or still downloading). */
+  missing: number;
+}
+
 export interface Job {
   id: string;
   kind: JobKind;
@@ -303,6 +348,20 @@ export const api = {
       link: "link" in pick ? pick.link : null,
     }),
   spotifyImport: (request: ImportRequest) => call<number>("spotify_import", { request }),
+  libraryTracks: () => call<LibraryData>("library_tracks"),
+  libraryRescan: () => call<void>("library_rescan"),
+  setLiked: (ids: number[], liked: boolean) => call<void>("set_liked", { ids, liked }),
+  revealTrack: (id: number) => call<void>("reveal_track", { id }),
+  onLibraryChanged: (fn: () => void) => on<unknown>("library-changed", () => fn()),
+  playlists: () => call<PlaylistSummary[]>("playlists_list"),
+  playlist: (id: string) => call<PlaylistDetail>("playlist_get", { id }),
+  playlistCreate: (name: string, trackIds: number[] = []) => call<string>("playlist_create", { name, trackIds }),
+  playlistRename: (id: string, name: string) => call<void>("playlist_rename", { id, name }),
+  playlistDelete: (id: string) => call<void>("playlist_delete", { id }),
+  playlistAdd: (id: string, trackIds: number[]) => call<number>("playlist_add", { id, trackIds }),
+  playlistRemove: (id: string, trackIds: number[]) => call<void>("playlist_remove", { id, trackIds }),
+  playlistReorder: (id: string, trackIds: number[]) => call<void>("playlist_reorder", { id, trackIds }),
+
   /** Local file path of a 12-second clip (play with convertFileSrc). */
   previewClip: (videoId: string, duration: number | null) => call<string>("preview_clip", { videoId, duration }),
 };

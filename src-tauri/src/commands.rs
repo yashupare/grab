@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::{
     AppState,
     error::{AppError, AppResult},
-    importer, jobs, library, matcher,
+    importer, jobs, library, matcher, music, playlists,
     settings::{self, Settings},
     spotify,
     toolmgr,
@@ -26,8 +26,14 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
 
 #[tauri::command]
 pub async fn update_settings(app: AppHandle, state: State<'_, AppState>, patch: Map<String, Value>) -> AppResult<Settings> {
+    let before = settings::load(&state.db, &state.default_settings)?;
     let s = settings::update(&state.db, &state.default_settings, patch)?;
     library::allow_folders(&app, &s); // new folders become playable right away
+    if music::roots(&before) != music::roots(&s) {
+        let lib = app.state::<Arc<music::Library>>();
+        lib.rewatch();
+        lib.rescan();
+    }
     Ok(s)
 }
 
@@ -251,4 +257,78 @@ pub async fn preview_clip(app: AppHandle, video_id: String, duration: Option<f64
     let start = if duration.unwrap_or(0.0) > 75.0 { 30.0 } else { 0.0 };
     let path = ytdlp::preview_clip(&video_id, start, &library::previews_dir(&app)).await?;
     Ok(path.display().to_string())
+}
+
+// ---------------------------------------------------------------- music library
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryData {
+    tracks: Vec<music::Track>,
+    /// A scan is running (first start, or folders changed).
+    scanning: bool,
+}
+
+#[tauri::command]
+pub async fn library_tracks(state: State<'_, AppState>, lib: State<'_, Arc<music::Library>>) -> AppResult<LibraryData> {
+    Ok(LibraryData { tracks: music::tracks(&state.db)?, scanning: lib.scanning() })
+}
+
+#[tauri::command]
+pub async fn library_rescan(lib: State<'_, Arc<music::Library>>) -> AppResult<()> {
+    lib.rescan();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_liked(state: State<'_, AppState>, ids: Vec<i64>, liked: bool) -> AppResult<()> {
+    music::set_liked(&state.db, &ids, liked)
+}
+
+#[tauri::command]
+pub async fn reveal_track(app: AppHandle, state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let path = music::track_path(&state.db, id)?;
+    app.opener().reveal_item_in_dir(path).map_err(|e| AppError::Invalid(format!("Couldn't show the file: {e}")))
+}
+
+// ---------------------------------------------------------------- playlists
+
+#[tauri::command]
+pub async fn playlists_list(state: State<'_, AppState>) -> AppResult<Vec<playlists::PlaylistSummary>> {
+    playlists::list(&state.db)
+}
+
+#[tauri::command]
+pub async fn playlist_get(state: State<'_, AppState>, id: String) -> AppResult<playlists::PlaylistDetail> {
+    playlists::get(&state.db, &id)
+}
+
+#[tauri::command]
+pub async fn playlist_create(state: State<'_, AppState>, name: String, track_ids: Vec<i64>) -> AppResult<String> {
+    playlists::create(&state.db, &name, &track_ids)
+}
+
+#[tauri::command]
+pub async fn playlist_rename(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
+    playlists::rename(&state.db, &id, &name)
+}
+
+#[tauri::command]
+pub async fn playlist_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    playlists::delete(&state.db, &id)
+}
+
+#[tauri::command]
+pub async fn playlist_add(state: State<'_, AppState>, id: String, track_ids: Vec<i64>) -> AppResult<usize> {
+    playlists::add(&state.db, &id, &track_ids)
+}
+
+#[tauri::command]
+pub async fn playlist_remove(state: State<'_, AppState>, id: String, track_ids: Vec<i64>) -> AppResult<()> {
+    playlists::remove(&state.db, &id, &track_ids)
+}
+
+#[tauri::command]
+pub async fn playlist_reorder(state: State<'_, AppState>, id: String, track_ids: Vec<i64>) -> AppResult<()> {
+    playlists::reorder(&state.db, &id, &track_ids)
 }

@@ -2,7 +2,9 @@ import { createRootRoute, createRoute, createRouter } from "@tanstack/react-rout
 import { AppShell } from "./AppShell";
 import { HomePage } from "../pages/HomePage";
 import { LinkPage } from "../pages/LinkPage";
-import { ActivityPage, MusicPage, NotFoundPage, ToolsPage } from "../pages/PlaceholderPages";
+import { ActivityPage, NotFoundPage, ToolsPage } from "../pages/PlaceholderPages";
+import { MUSIC_TABS, MusicPage, type MusicTab } from "../pages/music/MusicPage";
+import { AlbumPage, ArtistPage, PlaylistPage } from "../pages/music/CollectionPages";
 import { VideosPage } from "../pages/VideosPage";
 import { VideoPlayerPage } from "../pages/VideoPlayerPage";
 import { SETTINGS_SECTIONS, SettingsPage, type SettingsSection } from "../pages/SettingsPage";
@@ -27,9 +29,15 @@ const routes = [
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/music",
-    validateSearch: (s: Record<string, unknown>) => ({ q: str(s.q) }),
+    validateSearch: (s: Record<string, unknown>): { q?: string; tab?: MusicTab } => ({
+      q: str(s.q) || undefined,
+      tab: (MUSIC_TABS as readonly string[]).includes(str(s.tab)) ? (s.tab as MusicTab) : undefined,
+    }),
     component: MusicPage,
   }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/music/album/$key", component: AlbumPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/music/artist/$key", component: ArtistPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/music/playlist/$id", component: PlaylistPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/videos", component: VideosPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/videos/$id", component: VideoPlayerPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tools", component: ToolsPage }),
@@ -37,7 +45,9 @@ const routes = [
     getParentRoute: () => rootRoute,
     path: "/settings",
     validateSearch: (s: Record<string, unknown>): { section?: SettingsSection } =>
-      (SETTINGS_SECTIONS as readonly string[]).includes(str(s.section)) ? { section: s.section as SettingsSection } : {},
+      (SETTINGS_SECTIONS as readonly string[]).includes(str(s.section))
+        ? { section: s.section as SettingsSection }
+        : {},
     component: SettingsPage,
   }),
 ] as const;

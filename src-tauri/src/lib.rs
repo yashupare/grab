@@ -6,6 +6,8 @@ mod jobs;
 mod library;
 mod logging;
 mod matcher;
+mod music;
+mod playlists;
 mod settings;
 mod spotify;
 mod tags;
@@ -77,6 +79,10 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let jobs = jobs::Manager::new(app.handle().clone());
     jobs.start()?;
     app.manage(jobs);
+
+    let library = music::Library::new(app.handle().clone());
+    library.start();
+    app.manage(library);
     Ok(())
 }
 
@@ -116,6 +122,18 @@ pub fn run() {
             commands::spotify_set_match,
             commands::spotify_import,
             commands::preview_clip,
+            commands::library_tracks,
+            commands::library_rescan,
+            commands::set_liked,
+            commands::reveal_track,
+            commands::playlists_list,
+            commands::playlist_get,
+            commands::playlist_create,
+            commands::playlist_rename,
+            commands::playlist_delete,
+            commands::playlist_add,
+            commands::playlist_remove,
+            commands::playlist_reorder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

@@ -37,6 +37,9 @@ hex = "0.4"
 zip = "9"
 # Audio tags and cover art (Spotify imports, music library)
 lofty = "=0.25.5"
+# Music library: watch folders for new/changed songs (notify 8.2.2 is <7 days old)
+notify = "=8.2.1"
+notify-debouncer-mini = "=0.7.0"
 tokio = { version = "1", features = ["fs", "io-util", "process", "time", "sync", "macros"] }
 
 

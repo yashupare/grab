@@ -157,6 +157,11 @@ pub fn write(path: &Path, t: &TrackTags, cover: Option<Vec<u8>>) -> AppResult<()
     }
     // yt-dlp's embedded description/URL comments are noise in a music library.
     tag.remove_comment();
+    // yt-dlp writes the YouTube upload date as the year, which is wrong for songs (a 2012 album
+    // uploaded in 2017). The real year isn't known here, so leave it empty rather than wrong.
+    for key in [ItemKey::RecordingDate, ItemKey::Year, ItemKey::ReleaseDate] {
+        tag.remove_key(key);
+    }
 
     if let Some(data) = cover
         && let Some(mime) = mime_of(&data)

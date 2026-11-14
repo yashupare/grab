@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { pauseMusic } from "../player/engine";
 import { AlertTriangle, ArrowLeft, ExternalLink, FolderOpen } from "lucide-react";
 import { api } from "../lib/ipc";
 import { formatBytes, formatDuration } from "../lib/format";
@@ -41,7 +42,9 @@ export function VideoPlayerPage() {
     const v = el.current;
     return () => {
       if (v && video && Number.isFinite(v.currentTime) && v.currentTime > 0) {
-        api.saveWatchPosition(video.jobId, v.currentTime, Number.isFinite(v.duration) ? v.duration : null).catch(() => {});
+        api
+          .saveWatchPosition(video.jobId, v.currentTime, Number.isFinite(v.duration) ? v.duration : null)
+          .catch(() => {});
         qc.invalidateQueries({ queryKey: ["videos"] });
       }
     };
@@ -68,7 +71,10 @@ export function VideoPlayerPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <button onClick={() => router.history.back()} className="mb-4 inline-flex items-center gap-1.5 text-muted hover:text-fg">
+      <button
+        onClick={() => router.history.back()}
+        className="mb-4 inline-flex items-center gap-1.5 text-muted hover:text-fg"
+      >
         <ArrowLeft className="size-4" aria-hidden /> Back
       </button>
 
@@ -77,7 +83,9 @@ export function VideoPlayerPage() {
           <div className="flex aspect-video flex-col items-center justify-center gap-3 p-6 text-center text-white">
             <AlertTriangle className="size-8 text-warning" aria-hidden />
             <p className="font-medium">This file can't play inside Grab.</p>
-            <p className="max-w-md text-[13px] text-white/70">Its format isn't supported by the built-in player. Your default video app can play it.</p>
+            <p className="max-w-md text-[13px] text-white/70">
+              Its format isn't supported by the built-in player. Your default video app can play it.
+            </p>
             <Button variant="primary" icon={<ExternalLink />} onClick={openExternally}>
               Open in default player
             </Button>
@@ -97,6 +105,7 @@ export function VideoPlayerPage() {
             onTimeUpdate={() => {
               if (Date.now() - lastSaved.current > 5000) save();
             }}
+            onPlay={pauseMusic}
             onPause={save}
             onEnded={save}
             onError={() => setFailed(true)}
@@ -107,10 +116,15 @@ export function VideoPlayerPage() {
       <div className="mt-5 flex items-start justify-between gap-6">
         <div className="min-w-0">
           <h1 className="selectable text-[20px] leading-[26px] font-semibold tracking-[-0.01em]">{video.title}</h1>
-          <p className="mt-1 text-muted">{[formatDuration(video.duration), formatBytes(video.size)].filter(Boolean).join(" · ")}</p>
+          <p className="mt-1 text-muted">
+            {[formatDuration(video.duration), formatBytes(video.size)].filter(Boolean).join(" · ")}
+          </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button icon={<FolderOpen />} onClick={() => api.revealJobFile(video.jobId).catch((e) => toast.error(errorMessage(e)))}>
+          <Button
+            icon={<FolderOpen />}
+            onClick={() => api.revealJobFile(video.jobId).catch((e) => toast.error(errorMessage(e)))}
+          >
             Show in folder
           </Button>
           <Button icon={<ExternalLink />} onClick={openExternally}>
