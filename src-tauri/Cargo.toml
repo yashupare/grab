@@ -1,6 +1,6 @@
 [package]
 name = "grab"
-version = "0.1.0"
+version = "0.1.1"
 description = "Grab: download, play and edit your media"
 edition = "2024"
 

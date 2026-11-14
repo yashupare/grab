@@ -59,8 +59,8 @@ export function ActivityPage() {
                 filter="active"
                 empty={{
                   icon: ArrowDownToLine,
-                  title: "Nothing downloading",
-                  text: "Paste a link anywhere to start a download.",
+                  title: "Nothing in progress",
+                  text: "Paste a link anywhere to download, or export something from Tools.",
                 }}
               />
             )}

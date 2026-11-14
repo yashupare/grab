@@ -78,7 +78,7 @@ export function HomePage() {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-line px-5 py-6 text-center text-muted">
-            Nothing downloading. Paste a link above to start.
+            Nothing in progress. Paste a link above to start a download.
           </div>
         )}
       </Section>

@@ -40,7 +40,7 @@ export function ActivitySheet() {
             <JobList
               filter="active"
               compact
-              empty={{ icon: ArrowDownToLine, title: "Nothing downloading", text: "Paste a link anywhere to start a download." }}
+              empty={{ icon: ArrowDownToLine, title: "Nothing in progress", text: "Paste a link anywhere to download, or export something from Tools." }}
             />
             {recentDone > 0 && (
               <>
