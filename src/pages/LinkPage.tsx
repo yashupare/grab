@@ -24,6 +24,7 @@ export function LinkPage() {
   if (!url) {
     return (
       <div className="mx-auto max-w-[720px] pt-[8vh]">
+        <h1 className="sr-only">Paste a link</h1>
         <EmptyState icon={Link2} title="Paste a link to get started">
           YouTube videos and playlists, Spotify songs, albums and playlists, and links from 1000+ other sites.
         </EmptyState>

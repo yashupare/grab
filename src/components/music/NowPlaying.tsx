@@ -153,6 +153,8 @@ function UpNext() {
   const [from, setFrom] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const upcoming = queue.slice(index + 1);
+  // A "Play all" of a big library can queue thousands of songs; show the next 200.
+  const SHOWN = 200;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-2">
       {upcoming.length === 0 ? (
@@ -169,7 +171,7 @@ function UpNext() {
             </button>
           </div>
           <ul aria-label="Up next">
-            {upcoming.map((t, k) => {
+            {upcoming.slice(0, SHOWN).map((t, k) => {
               const i = index + 1 + k;
               return (
                 <li
@@ -198,7 +200,6 @@ function UpNext() {
                   <button
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     onClick={() => usePlayer.getState().jump(i)}
-                    aria-label={`Play ${t.title}`}
                   >
                     <Cover src={t.cover} className="size-10" />
                     <span className="min-w-0">
@@ -220,6 +221,9 @@ function UpNext() {
               );
             })}
           </ul>
+          {upcoming.length > SHOWN && (
+            <p className="px-3 py-3 text-center text-[13px] text-muted">and {upcoming.length - SHOWN} more</p>
+          )}
         </>
       )}
     </div>

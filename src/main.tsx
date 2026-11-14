@@ -15,6 +15,9 @@ useUi.subscribe((s, prev) => {
   if (s.theme !== prev.theme) applyTheme(s.theme);
 });
 
+// Dev builds only: lets tests inspect and seed app state from DevTools.
+if (import.meta.env.DEV) (window as unknown as { __grab: unknown }).__grab = { queryClient, router };
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

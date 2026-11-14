@@ -12,11 +12,23 @@ export function Logo({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2 select-none" data-tauri-drag-region>
       <div className="grid size-6 place-items-center rounded-md bg-accent text-on-accent" aria-hidden>
-        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          viewBox="0 0 24 24"
+          className="size-4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M6 19.5h12" />
         </svg>
       </div>
-      {!compact && <span className="text-[15px] font-semibold tracking-[-0.02em]" data-tauri-drag-region>grab</span>}
+      {!compact && (
+        <span className="text-[15px] font-semibold tracking-[-0.02em]" data-tauri-drag-region>
+          grab
+        </span>
+      )}
     </div>
   );
 }
@@ -31,7 +43,8 @@ function WindowControls() {
     return () => unlisten?.();
   }, []);
   const win = getCurrentWindow();
-  const btn = "grid h-11 w-[46px] place-items-center text-muted transition-colors hover:bg-surface-2 hover:text-fg [&_svg]:size-4";
+  const btn =
+    "grid h-11 w-[46px] place-items-center text-muted transition-colors hover:bg-surface-2 hover:text-fg [&_svg]:size-4";
   return (
     <div className="flex self-stretch">
       <button className={btn} aria-label="Minimise" onClick={() => win.minimize()}>
@@ -58,10 +71,7 @@ export function TitleBar({ linkRef }: { linkRef: RefObject<HTMLInputElement | nu
   const router = useRouter();
   const { activityOpen, setActivityOpen } = useUi();
   return (
-    <div
-      className="flex h-11 items-center gap-3 border-b border-line bg-surface-1 pl-4"
-      data-tauri-drag-region
-    >
+    <header className="flex h-11 items-center gap-3 border-b border-line bg-surface-1 pl-4" data-tauri-drag-region>
       <Logo />
       <div className="ml-2 flex items-center gap-0.5">
         <IconButton label="Back" size="sm" onClick={() => router.history.back()}>
@@ -84,6 +94,6 @@ export function TitleBar({ linkRef }: { linkRef: RefObject<HTMLInputElement | nu
         <PanelRight />
       </IconButton>
       {isTauri() ? <WindowControls /> : <div className="w-3" />}
-    </div>
+    </header>
   );
 }

@@ -1,4 +1,5 @@
-import { memo, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DropdownMenu } from "radix-ui";
 import {
@@ -100,6 +101,31 @@ export function TrackTable({
     playlist.onReorder(ids);
   }
 
+  // Only the rows on screen are rendered (libraries can have thousands of songs). The page
+  // scrolls in <main>, so the list measures where it starts inside it.
+  const body = useRef<HTMLDivElement>(null);
+  const [offset, setOffset] = useState(0);
+  const batch = picked.length > 1;
+  useLayoutEffect(() => {
+    const main = document.getElementById("main");
+    const measure = () => {
+      if (body.current && main)
+        setOffset(body.current.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [batch, tracks.length]);
+  // Its functions can't be memoised by React Compiler; this component is rendered normally.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virt = useVirtualizer({
+    count: tracks.length,
+    getScrollElement: () => document.getElementById("main"),
+    estimateSize: () => ROW_H,
+    overscan: 12,
+    scrollMargin: offset,
+  });
+
   if (tracks.length === 0) return <>{empty}</>;
 
   const grid = cn(
@@ -112,60 +138,84 @@ export function TrackTable({
   );
 
   return (
-    <div onKeyDown={onKey}>
+    <div
+      onKeyDown={onKey}
+      role="grid"
+      aria-label={context.label}
+      aria-multiselectable
+      aria-rowcount={tracks.length + 1}
+    >
       {picked.length > 1 && (
         <BatchBar tracks={picked} context={context} playlist={playlist} onClear={() => setSelected(new Set())} />
       )}
       <div
+        role="row"
+        aria-rowindex={1}
         className={cn(grid, "h-9 border-b border-line text-[12px] font-medium tracking-[0.04em] text-faint uppercase")}
       >
-        <span className="text-right">#</span>
-        <span>Title</span>
-        {showAlbum && <span>Album</span>}
-        {showAlbum && showAdded && <span>Added</span>}
-        <span />
-        <span className="text-right">Time</span>
-        <span />
+        <span role="columnheader" className="text-right">
+          #
+        </span>
+        <span role="columnheader">Title</span>
+        {showAlbum && <span role="columnheader">Album</span>}
+        {showAlbum && showAdded && <span role="columnheader">Added</span>}
+        <span role="columnheader">
+          <span className="sr-only">Liked</span>
+        </span>
+        <span role="columnheader" className="text-right">
+          Time
+        </span>
+        <span role="columnheader">
+          <span className="sr-only">More</span>
+        </span>
       </div>
-      <ul role="listbox" aria-label={context.label} aria-multiselectable className="py-1 outline-none" tabIndex={0}>
-        {tracks.map((t, i) => (
-          <Row
-            key={`${t.id}-${i}`}
-            t={t}
-            i={i}
-            grid={grid}
-            number={albumNumbers ? (t.trackNo ?? i + 1) : i + 1}
-            selected={selected.has(t.id)}
-            isCurrent={current === t.id}
-            playing={playing}
-            showAlbum={showAlbum}
-            showAdded={!!showAdded}
-            showCover={showCover}
-            onClick={click}
-            onPlay={playFrom}
-            menu={<TrackMenu tracks={selected.has(t.id) && picked.length > 1 ? picked : [t]} playlist={playlist} />}
-            drag={
-              playlist?.onReorder
-                ? {
-                    onStart: () => setDragFrom(i),
-                    onOver: (after) => setDropAt(after ? i + 1 : i),
-                    onEnd: () => {
-                      if (dropAt != null) drop(dropAt);
-                      setDragFrom(null);
-                      setDropAt(null);
-                    },
-                    line: dropAt === i ? "top" : dropAt === i + 1 && i === tracks.length - 1 ? "bottom" : null,
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </ul>
+      <div ref={body} role="rowgroup" className="relative mt-1" style={{ height: virt.getTotalSize() }}>
+        {virt.getVirtualItems().map(({ index: i, start }) => {
+          const t = tracks[i]!;
+          return (
+            <Row
+              key={`${t.id}-${i}`}
+              top={start - offset}
+              t={t}
+              i={i}
+              grid={grid}
+              number={albumNumbers ? (t.trackNo ?? i + 1) : i + 1}
+              selected={selected.has(t.id)}
+              isCurrent={current === t.id}
+              playing={playing}
+              showAlbum={showAlbum}
+              showAdded={!!showAdded}
+              showCover={showCover}
+              onClick={click}
+              onPlay={playFrom}
+              menu={<TrackMenu tracks={selected.has(t.id) && picked.length > 1 ? picked : [t]} playlist={playlist} />}
+              drag={
+                playlist?.onReorder
+                  ? {
+                      onStart: () => setDragFrom(i),
+                      onOver: (after) => setDropAt(after ? i + 1 : i),
+                      onEnd: () => {
+                        if (dropAt != null) drop(dropAt);
+                        setDragFrom(null);
+                        setDropAt(null);
+                      },
+                      line: dropAt === i ? "top" : dropAt === i + 1 && i === tracks.length - 1 ? "bottom" : null,
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
 
+const ROW_H = 56;
+
 interface RowProps {
+  /** Pixels from the top of the list (virtual rows are positioned absolutely). */
+  top: number;
   t: Track;
   i: number;
   grid: string;
@@ -183,6 +233,7 @@ interface RowProps {
 }
 
 const Row = memo(function Row({
+  top,
   t,
   i,
   grid,
@@ -200,12 +251,14 @@ const Row = memo(function Row({
 }: RowProps) {
   const key = albumKey(t);
   return (
-    <li
-      role="option"
+    <div
+      role="row"
+      aria-rowindex={i + 2}
       aria-selected={selected}
+      style={{ transform: `translateY(${top}px)` }}
       className={cn(
         grid,
-        "group relative h-14 cursor-default rounded-md select-none [contain-intrinsic-size:auto_56px] [content-visibility:auto]",
+        "group absolute inset-x-0 top-0 h-14 cursor-default rounded-md select-none",
         selected ? "bg-accent-soft" : "hover:bg-surface-2",
         drag?.line === "top" && "before:absolute before:inset-x-2 before:-top-px before:h-0.5 before:bg-accent",
         drag?.line === "bottom" && "after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:bg-accent",
@@ -224,7 +277,7 @@ const Row = memo(function Row({
       }
       onDragEnd={drag?.onEnd}
     >
-      <span className="relative flex justify-end text-[13px] text-faint tabular">
+      <span role="gridcell" className="relative flex justify-end text-[13px] text-faint tabular">
         <span className={cn("group-hover:invisible", isCurrent && "invisible")}>{number}</span>
         <button
           className={cn(
@@ -242,7 +295,7 @@ const Row = memo(function Row({
         </button>
         {isCurrent && playing && <Bars className="absolute top-1/2 right-0 -translate-y-1/2 group-hover:hidden" />}
       </span>
-      <span className="flex min-w-0 items-center gap-3">
+      <span role="gridcell" className="flex min-w-0 items-center gap-3">
         {showCover && <Cover src={t.cover} className="size-10" />}
         <span className="min-w-0">
           <span className={cn("block truncate font-medium", isCurrent && "text-accent")} title={t.title}>
@@ -266,7 +319,7 @@ const Row = memo(function Row({
         </span>
       </span>
       {showAlbum && (
-        <span className="truncate text-[13px] text-muted">
+        <span role="gridcell" className="truncate text-[13px] text-muted">
           {t.album && key ? (
             <Link
               to="/music/album/$key"
@@ -281,13 +334,27 @@ const Row = memo(function Row({
           )}
         </span>
       )}
-      {showAlbum && showAdded && <span className="truncate text-[13px] text-muted">{formatRelative(t.addedAt)}</span>}
-      <LikeButton track={t} className={cn(!t.liked && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} />
-      <span className="text-right text-[13px] text-muted tabular">{formatDuration(t.duration)}</span>
-      <span className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+      {showAlbum && showAdded && (
+        <span role="gridcell" className="truncate text-[13px] text-muted">
+          {formatRelative(t.addedAt)}
+        </span>
+      )}
+      <span role="gridcell">
+        <LikeButton
+          track={t}
+          className={cn(!t.liked && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+        />
+      </span>
+      <span role="gridcell" className="text-right text-[13px] text-muted tabular">
+        {formatDuration(t.duration)}
+      </span>
+      <span
+        role="gridcell"
+        className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100"
+      >
         {menu}
       </span>
-    </li>
+    </div>
   );
 });
 

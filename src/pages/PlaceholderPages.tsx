@@ -9,14 +9,17 @@ import { api } from "../lib/ipc";
 import { toast } from "../stores/toasts";
 import { errorMessage } from "../hooks/useSettings";
 
+/** Tab ids end up in id/aria-controls attributes, which can't contain spaces. */
+const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
 function PageTabs({ tabs, children }: { tabs: string[]; children: (tab: string) => React.ReactNode }) {
   return (
-    <Tabs.Root defaultValue={tabs[0]}>
+    <Tabs.Root defaultValue={slug(tabs[0] ?? "")}>
       <Tabs.List className="mb-2 flex gap-6 border-b border-line" aria-label="Sections">
         {tabs.map((t) => (
           <Tabs.Trigger
             key={t}
-            value={t}
+            value={slug(t)}
             className="-mb-px border-b-2 border-transparent pb-2.5 font-medium text-muted transition-colors hover:text-fg data-[state=active]:border-accent data-[state=active]:text-fg"
           >
             {t}
@@ -24,7 +27,7 @@ function PageTabs({ tabs, children }: { tabs: string[]; children: (tab: string) 
         ))}
       </Tabs.List>
       {tabs.map((t) => (
-        <Tabs.Content key={t} value={t} className="outline-none">
+        <Tabs.Content key={t} value={slug(t)} className="outline-none">
           {children(t)}
         </Tabs.Content>
       ))}
