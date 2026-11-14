@@ -472,6 +472,7 @@ Each milestone ends with a working, launchable app.
 | **M4 Music player** | Library scan + watcher, Songs/Albums/Artists/Liked, album/artist/playlist pages, queue, Now Playing, media keys, tray controls, crossfade | Play through an album with media keys while the window is closed to tray |
 | **M5 Tools** | Merge, Trim, Compress, Convert with hardware acceleration | Each tool exports correctly; compress hits its size target within 5% |
 | **M6 Release** | Installer (NSIS), auto-update from GitHub Releases, Welcome flow, about/licences, performance and accessibility pass, polish | Fresh Windows install → welcome → download → play, with no manual steps; update from v1.0.0 to v1.0.1 works |
+| **M7 Watch Together** | Host streams a video to up to 5 friends (Cloudflare Realtime SFU, free tier); room codes; chat and reactions; friends control playback with the host's permission. See [WATCH_TOGETHER.md](WATCH_TOGETHER.md) | Host + 2 friends on different networks watch 30 min at 720p under 1 s behind; a permitted friend pauses and seeks for everyone |
 | **Later** | Spotify API (with Premium), lyrics, channel subscriptions, remote mode for phone, AI features | — |
 
 ### Definition of done (every feature)
