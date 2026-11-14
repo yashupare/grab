@@ -262,6 +262,21 @@ export interface PlaylistDetail extends PlaylistSummary {
   missing: number;
 }
 
+// ---- Windows integration (Rust: system.rs)
+export interface NowPlayingInfo {
+  title: string;
+  artist: string;
+  album: string | null;
+  cover: string | null;
+  playing: boolean;
+  position: number;
+  duration: number;
+}
+export type PlayerCommand =
+  | { action: "toggle" | "play" | "pause" | "next" | "previous" | "stop" }
+  | { action: "seekTo"; position: number }
+  | { action: "seekBy"; offset: number };
+
 export interface Job {
   id: string;
   kind: JobKind;
@@ -353,6 +368,11 @@ export const api = {
   setLiked: (ids: number[], liked: boolean) => call<void>("set_liked", { ids, liked }),
   revealTrack: (id: number) => call<void>("reveal_track", { id }),
   onLibraryChanged: (fn: () => void) => on<unknown>("library-changed", () => fn()),
+  mediaUpdate: (now: NowPlayingInfo | null) => call<void>("media_update", { now }),
+  onPlayerCommand: (fn: (c: PlayerCommand) => void) => on<PlayerCommand>("player-command", fn),
+  autostartGet: () => call<boolean>("autostart_get"),
+  autostartSet: (enabled: boolean) => call<boolean>("autostart_set", { enabled }),
+  quitApp: () => call<void>("quit_app"),
   playlists: () => call<PlaylistSummary[]>("playlists_list"),
   playlist: (id: string) => call<PlaylistDetail>("playlist_get", { id }),
   playlistCreate: (name: string, trackIds: number[] = []) => call<string>("playlist_create", { name, trackIds }),

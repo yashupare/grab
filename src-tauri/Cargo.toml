@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 # Pinned to releases ≥7 days old (same rule as pnpm-workspace.yaml)
 tauri-plugin-dialog = "=2.8.4"
@@ -40,6 +40,11 @@ lofty = "=0.25.5"
 # Music library: watch folders for new/changed songs (notify 8.2.2 is <7 days old)
 notify = "=8.2.1"
 notify-debouncer-mini = "=0.7.0"
+# Media keys + Windows media overlay (SMTC)
+souvlaki = "=0.9.3"
+tauri-plugin-autostart = "=2.7.0"
+# A second launch focuses the running Grab (which may be hidden in the tray)
+tauri-plugin-single-instance = "=2.5.5"
 tokio = { version = "1", features = ["fs", "io-util", "process", "time", "sync", "macros"] }
 
 

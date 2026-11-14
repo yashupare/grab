@@ -9,6 +9,7 @@ mod matcher;
 mod music;
 mod playlists;
 mod settings;
+mod system;
 mod spotify;
 mod tags;
 mod toolmgr;
@@ -83,16 +84,36 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let library = music::Library::new(app.handle().clone());
     library.start();
     app.manage(library);
+
+    let sys = system::System::new();
+    if let Err(e) = sys.setup(app.handle()) {
+        tracing::warn!(error = %e, "tray unavailable");
+    }
+    app.manage(sys);
+
+    // Started with Windows: stay in the tray. Otherwise show the window (hidden until now so it
+    // doesn't flash before the UI loads).
+    if !std::env::args().any(|a| a == "--hidden") {
+        system::show_main(app.handle());
+    }
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be first: a second launch just brings the running Grab forward.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| system::show_main(app)))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(setup)
+        .on_window_event(|w, e| {
+            if let Some(sys) = w.app_handle().try_state::<system::System>() {
+                sys.on_window_event(w, e);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::update_settings,
@@ -134,6 +155,10 @@ pub fn run() {
             commands::playlist_add,
             commands::playlist_remove,
             commands::playlist_reorder,
+            commands::media_update,
+            commands::autostart_get,
+            commands::autostart_set,
+            commands::quit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

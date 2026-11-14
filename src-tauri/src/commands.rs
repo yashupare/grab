@@ -14,7 +14,7 @@ use crate::{
     importer, jobs, library, matcher, music, playlists,
     settings::{self, Settings},
     spotify,
-    toolmgr,
+    system, toolmgr,
     tools::{self, ToolStatus},
     ytdlp,
 };
@@ -331,4 +331,35 @@ pub async fn playlist_remove(state: State<'_, AppState>, id: String, track_ids: 
 #[tauri::command]
 pub async fn playlist_reorder(state: State<'_, AppState>, id: String, track_ids: Vec<i64>) -> AppResult<()> {
     playlists::reorder(&state.db, &id, &track_ids)
+}
+
+// ---------------------------------------------------------------- Windows integration
+
+/// The player reports what's playing (None = nothing loaded) for the media overlay and tray.
+#[tauri::command]
+pub async fn media_update(sys: State<'_, system::System>, now: Option<system::NowPlaying>) -> AppResult<()> {
+    sys.update(now);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn autostart_get(app: AppHandle) -> AppResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| AppError::Invalid(format!("Couldn't check: {e}")))
+}
+
+#[tauri::command]
+pub async fn autostart_set(app: AppHandle, enabled: bool) -> AppResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    let r = if enabled { al.enable() } else { al.disable() };
+    r.map_err(|e| AppError::Invalid(format!("Couldn't change this: {e}")))?;
+    al.is_enabled().map_err(|e| AppError::Invalid(format!("Couldn't check: {e}")))
+}
+
+/// Quit for real (the close button may only hide to the tray).
+#[tauri::command]
+pub async fn quit_app(app: AppHandle) -> AppResult<()> {
+    system::quit(&app);
+    Ok(())
 }

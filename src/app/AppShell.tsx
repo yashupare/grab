@@ -13,6 +13,7 @@ import { Toaster } from "../components/Toaster";
 import { PlayerBar } from "../components/music/PlayerBar";
 import { NowPlaying } from "../components/music/NowPlaying";
 import { usePlayerEngine } from "../player/engine";
+import { useSystemMedia } from "../player/system";
 import { useLibrarySync } from "../hooks/useLibrary";
 import { usePlayer } from "../stores/player";
 import { useSettings } from "../hooks/useSettings";
@@ -24,6 +25,7 @@ export function AppShell() {
   useThemeSync();
   useJobsSync();
   usePlayerEngine();
+  useSystemMedia();
   useLibrarySync();
   const crossfade = useSettings().data?.crossfade ?? 0;
   useEffect(() => {

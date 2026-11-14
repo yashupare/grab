@@ -20,6 +20,8 @@
         "minHeight": 640,
         "center": true,
         "decorations": false,
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService",
         "resizable": true
       }
     ],

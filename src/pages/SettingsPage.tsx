@@ -39,7 +39,6 @@ const LABELS: Record<SettingsSection, string> = {
 
 /** Settings that exist in the plan but whose feature isn't built yet. */
 const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: string }>> = {
-  general: { milestone: "M4", items: ["Start with Windows", "Keep running in the tray when closed"] },
   downloads: { milestone: "M6", items: ["File name pattern", "Speed limit"] },
   music: { milestone: "a later version", items: ["Normalise volume"] },
   tools: { milestone: "M5", items: ["Hardware acceleration", "Default output folder and quality"] },
@@ -90,6 +89,24 @@ function PathValue({ path, onChange }: { path: string; onChange?: (p: string) =>
   );
 }
 
+function AutostartRow() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["autostart"], queryFn: api.autostartGet, retry: false });
+  const set = useMutation({
+    mutationFn: api.autostartSet,
+    onSuccess: (v) => qc.setQueryData(["autostart"], v),
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <Row
+      title="Start with Windows"
+      description="Grab starts in the tray when you sign in, ready for media keys and downloads."
+    >
+      <Switch label="Start with Windows" checked={q.data ?? false} onChange={(v) => set.mutate(v)} />
+    </Row>
+  );
+}
+
 function GeneralSection({ s, save }: { s?: Settings; save: (p: Partial<Settings>) => void }) {
   const setThemeLocal = useUi((st) => st.setTheme);
   const theme = useUi((st) => st.theme);
@@ -110,6 +127,19 @@ function GeneralSection({ s, save }: { s?: Settings; save: (p: Partial<Settings>
           ]}
         />
       </Row>
+      {s && (
+        <Row
+          title="Keep running in the tray when closed"
+          description="The close button hides Grab next to the clock: music keeps playing and downloads finish. Right-click the tray icon to quit."
+        >
+          <Switch
+            label="Keep running in the tray"
+            checked={s.closeToTray}
+            onChange={(closeToTray) => save({ closeToTray })}
+          />
+        </Row>
+      )}
+      <AutostartRow />
       {s && (
         <Row
           title="Notifications"
