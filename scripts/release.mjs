@@ -23,7 +23,10 @@ const fail = (msg) => {
   console.error(`\n✖ ${msg}`);
   process.exit(1);
 };
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", cwd: root, shell: process.platform === "win32", ...opts });
+// pnpm is a .cmd on Windows and needs a shell; everything else runs directly so arguments with
+// spaces (titles, notes) stay intact.
+const run = (cmd, args, opts = {}) =>
+  execFileSync(cmd, args, { stdio: "inherit", cwd: root, shell: process.platform === "win32" && cmd === "pnpm", ...opts });
 const version = () => JSON.parse(readFileSync(confPath, "utf8")).version;
 
 function setVersion(v) {
