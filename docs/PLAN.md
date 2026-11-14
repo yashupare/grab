@@ -37,8 +37,8 @@ All colours are CSS variables, so themes switch instantly. Text/background pairs
 | `--surface-3` | `#292826` | `#E6E3DC` | Pressed, selected rows |
 | `--border` | `#2E2D2A` | `#E2DFD7` | Dividers, outlines |
 | `--text` | `#F2F0EB` | `#1A1915` | Primary text |
-| `--text-muted` | `#A19E95` | `#6B675E` | Secondary text |
-| `--text-faint` | `#6E6B63` | `#9A968C` | Hints, disabled |
+| `--text-muted` | `#A19E95` | `#56524B` | Secondary text |
+| `--text-faint` | `#87857E` | `#6F6C65` | Hints, labels (AA on the backgrounds it's used on; adjusted in M6) |
 | `--accent` | `#FF7A45` | `#C2410C` | Primary buttons, progress, active item |
 | `--accent-hover` | `#FF8F61` | `#A93A0B` | |
 | `--accent-fg` | `#1C0A02` | `#FFFFFF` | Text on accent (keeps AA contrast) |
@@ -472,7 +472,7 @@ Each milestone ends with a working, launchable app.
 | **M4 Music player** | Library scan + watcher, Songs/Albums/Artists/Liked, album/artist/playlist pages, queue, Now Playing, media keys, tray controls, crossfade | Play through an album with media keys while the window is closed to tray |
 | **M5 Tools** | Merge, Trim, Compress, Convert with hardware acceleration | Each tool exports correctly; compress hits its size target within 5% |
 | **M6 Release** | Installer (NSIS), auto-update from GitHub Releases, Welcome flow, about/licences, performance and accessibility pass, polish | Fresh Windows install → welcome → download → play, with no manual steps; update from v1.0.0 to v1.0.1 works |
-| **M7 Watch Together** | Host streams a video to up to 5 friends (Cloudflare Realtime SFU, free tier); room codes; chat and reactions; friends control playback with the host's permission. See [WATCH_TOGETHER.md](WATCH_TOGETHER.md) | Host + 2 friends on different networks watch 30 min at 720p under 1 s behind; a permitted friend pauses and seeks for everyone |
+| **M7 Watch Together** | Host streams a video to up to 5 friends who join from any browser or Grab (Cloudflare Realtime SFU, free tier); invite links; chat, reactions, ready check; guests control playback with the host's permission; voice chat and queue. Full plan: [WATCH_TOGETHER.md](WATCH_TOGETHER.md) | Host + 2 guests on different networks watch 30 min within 1 s; a permitted guest pauses and seeks for everyone; a slow guest gets SD without affecting others |
 | **Later** | Spotify API (with Premium), lyrics, channel subscriptions, remote mode for phone, AI features | — |
 
 ### Definition of done (every feature)
