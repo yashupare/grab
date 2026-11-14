@@ -31,7 +31,7 @@ use crate::{
     AppState,
     db::Db,
     error::{AppError, AppResult},
-    importer,
+    importer, media,
     settings::{self, AudioFormat, SponsorBlock},
     tags::{self, TrackTags},
     ytdlp,
@@ -44,6 +44,8 @@ use crate::{
 pub enum Kind {
     Video,
     Audio,
+    /// A Tools export (merge, trim, compress, convert) run by ffmpeg.
+    Export,
 }
 
 impl Kind {
@@ -51,6 +53,7 @@ impl Kind {
         match self {
             Kind::Video => "video",
             Kind::Audio => "audio",
+            Kind::Export => "export",
         }
     }
 }
@@ -133,10 +136,19 @@ pub struct DownloadRequest {
     /// Song details written into the file after download (Spotify imports). Audio only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<TrackTags>,
+    /// What to make (Kind::Export only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export: Option<media::ExportRequest>,
 }
 
 impl DownloadRequest {
     fn validate(&self) -> AppResult<()> {
+        if self.kind == Kind::Export {
+            return self.export.as_ref().ok_or_else(|| AppError::Invalid("Nothing to export.".into()))?.validate();
+        }
+        if self.export.is_some() {
+            return Err(AppError::Invalid("Invalid download.".into()));
+        }
         self.options.validate()?;
         if let Some(t) = &self.tags {
             if self.kind != Kind::Audio {
@@ -211,6 +223,8 @@ pub struct Job {
 pub enum Stage {
     Downloading,
     Processing,
+    /// A Tools export: `fraction` and `eta` are set.
+    Exporting,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -377,6 +391,7 @@ pub fn download_args(req: &DownloadRequest, dir: &Path, temp: &Path, template: &
                 a.extend(["--embed-thumbnail", "--convert-thumbnails", "jpg"].map(String::from));
             }
         }
+        Kind::Export => {} // never sent to yt-dlp
     }
     a.extend(option_args(req));
     a.push("--".into());
@@ -456,6 +471,18 @@ pub fn parse_line(line: &str) -> Line {
 }
 
 // ---------------------------------------------------------------- manager
+
+/// Forward a child process's output lines into one channel (`is_err` marks stderr).
+fn pump(r: impl AsyncRead + Unpin + Send + 'static, is_err: bool, tx: mpsc::UnboundedSender<(bool, String)>) {
+    tauri::async_runtime::spawn(async move {
+        let mut lines = BufReader::new(r).lines();
+        while let Ok(Some(l)) = lines.next_line().await {
+            if tx.send((is_err, l)).is_err() {
+                break;
+            }
+        }
+    });
+}
 
 struct Control {
     stop: Notify,
@@ -563,10 +590,14 @@ impl Manager {
         if !enabled || focused {
             return;
         }
-        let (title, body) = if ok {
-            ("Download finished", job.title.clone())
-        } else {
-            ("Download failed", format!("{}: {}", job.title, message.unwrap_or("something went wrong")))
+        let export = job.kind == Kind::Export;
+        let (title, body) = match (ok, export) {
+            (true, false) => ("Download finished", job.title.clone()),
+            (true, true) => ("Export finished", job.title.clone()),
+            (false, e) => (
+                if e { "Export failed" } else { "Download failed" },
+                format!("{}: {}", job.title, message.unwrap_or("something went wrong")),
+            ),
         };
         if let Err(e) = self.app.notification().builder().title(title).body(body).show() {
             tracing::debug!(error = %e, "notification not shown");
@@ -719,6 +750,9 @@ impl Manager {
     }
 
     async fn execute(&self, job: &Job, ctl: &Control, temp: &Path) -> Result<(String, i64), Outcome> {
+        if job.kind == Kind::Export {
+            return self.execute_export(job, ctl, temp).await;
+        }
         let fail = Outcome::failed;
         let tools = ytdlp::tool_paths().map_err(fail)?;
         let s = {
@@ -726,7 +760,7 @@ impl Manager {
             settings::load(&st.db, &st.default_settings).map_err(fail)?
         };
         let dir = PathBuf::from(match job.kind {
-            Kind::Video => &s.video_dir,
+            Kind::Video | Kind::Export => &s.video_dir,
             Kind::Audio => &s.music_dir,
         });
         std::fs::create_dir_all(&dir).map_err(|e| fail(e.into()))?;
@@ -740,16 +774,6 @@ impl Manager {
         let mut child = cmd.spawn().map_err(|e| fail(e.into()))?;
 
         let (tx, mut rx) = mpsc::unbounded_channel::<(bool, String)>();
-        fn pump(r: impl AsyncRead + Unpin + Send + 'static, is_err: bool, tx: mpsc::UnboundedSender<(bool, String)>) {
-            tauri::async_runtime::spawn(async move {
-                let mut lines = BufReader::new(r).lines();
-                while let Ok(Some(l)) = lines.next_line().await {
-                    if tx.send((is_err, l)).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
         if let Some(out) = child.stdout.take() {
             pump(out, false, tx.clone());
         }
@@ -843,6 +867,130 @@ impl Manager {
             }),
             (false, _) => Err(Outcome::Failed { message: ytdlp::friendly_error(&stderr), raw: stderr }),
         }
+    }
+
+    // ------------------------------------------------------------ Tools exports
+
+    /// Run a merge/trim/compress/convert with ffmpeg. Writes into the job's temp folder and moves
+    /// the file into place only when it's complete. A hardware encoder that fails is retried once
+    /// in software.
+    async fn execute_export(&self, job: &Job, ctl: &Control, temp: &Path) -> Result<(String, i64), Outcome> {
+        let fail = Outcome::failed;
+        let req = job.request.export.as_ref().ok_or_else(|| fail(AppError::Invalid("Nothing to export.".into())))?;
+        let hardware = {
+            let st = self.state();
+            settings::load(&st.db, &st.default_settings).map_err(fail)?.hardware_accel
+        };
+        let mut probes = Vec::new();
+        for i in req.tool.inputs() {
+            probes.push(media::probe(i).await.map_err(fail)?);
+        }
+        let dir = PathBuf::from(&req.output_dir);
+        std::fs::create_dir_all(&dir).map_err(|e| fail(e.into()))?;
+        // A paused/retried export starts over.
+        let _ = std::fs::remove_dir_all(temp);
+        std::fs::create_dir_all(temp).map_err(|e| fail(e.into()))?;
+
+        let mut enc = media::pick_encoder(hardware).await;
+        loop {
+            let plan = media::plan(&req.tool, &probes, enc).map_err(fail)?;
+            let tmp_out = temp.join(format!("output.{}", plan.ext));
+            if let Some(list) = &plan.concat_list {
+                std::fs::write(temp.join("list.txt"), list).map_err(|e| fail(e.into()))?;
+            }
+            tracing::info!(id = %job.id, tool = req.tool.verb(), encoder = ?enc, copy = plan.copy, "export started");
+            match self.run_passes(job, ctl, &plan, &tmp_out, temp).await {
+                Ok(()) => {
+                    let out = media::unique_output(&dir, &req.name, &plan.ext);
+                    if std::fs::rename(&tmp_out, &out).is_err() {
+                        // Different drive: copy, then remove.
+                        std::fs::copy(&tmp_out, &out).map_err(|e| fail(e.into()))?;
+                        let _ = std::fs::remove_file(&tmp_out);
+                    }
+                    let size = std::fs::metadata(&out).map(|m| m.len() as i64).unwrap_or(0);
+                    return Ok((out.display().to_string(), size));
+                }
+                Err(Outcome::Failed { raw, .. }) if enc != media::Encoder::Software && !plan.copy => {
+                    tracing::warn!(id = %job.id, encoder = ?enc, stderr = %raw, "hardware encode failed; retrying in software");
+                    enc = media::Encoder::Software;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    async fn run_passes(&self, job: &Job, ctl: &Control, plan: &media::Plan, out: &Path, temp: &Path) -> Result<(), Outcome> {
+        let fail = Outcome::failed;
+        let started = Instant::now();
+        let passes = plan.passes.len().max(1) as f64;
+        let audio = temp.join("audio.m4a");
+        for (i, pass) in plan.passes.iter().enumerate() {
+            // Compress: size the video from the measured audio (see media::Budget).
+            let vkbps = plan.budget.map(|b| b.video_kbps(std::fs::metadata(&audio).map_or(0, |m| m.len())));
+            let args: Vec<String> = pass
+                .iter()
+                .map(|a| match a.as_str() {
+                    media::OUT => out.display().to_string(),
+                    media::PASSLOG => temp.join("pass").display().to_string(),
+                    media::LIST => temp.join("list.txt").display().to_string(),
+                    media::AUDIO => audio.display().to_string(),
+                    media::VKBPS => format!("{}k", vkbps.unwrap_or(1000)),
+                    _ => a.clone(),
+                })
+                .collect();
+            let mut cmd = media::ffmpeg().map_err(fail)?;
+            // Two-pass logs land in the working directory unless told otherwise.
+            cmd.current_dir(temp).args(&args).stdout(Stdio::piped()).stderr(Stdio::piped());
+            let mut child = cmd.spawn().map_err(|e| fail(e.into()))?;
+            let (tx, mut rx) = mpsc::unbounded_channel::<(bool, String)>();
+            if let Some(o) = child.stdout.take() {
+                pump(o, false, tx.clone());
+            }
+            if let Some(e) = child.stderr.take() {
+                pump(e, true, tx.clone());
+            }
+            drop(tx);
+            let mut errors: VecDeque<String> = VecDeque::new();
+            let mut last_emit = Instant::now() - Duration::from_secs(1);
+            loop {
+                tokio::select! {
+                    msg = rx.recv() => {
+                        let Some((is_err, line)) = msg else { break };
+                        if is_err {
+                            if !line.trim().is_empty() {
+                                errors.push_back(line);
+                                if errors.len() > 30 { errors.pop_front(); }
+                            }
+                        } else if let Some(t) = media::progress_seconds(&line)
+                            && last_emit.elapsed() >= Duration::from_millis(400)
+                        {
+                            last_emit = Instant::now();
+                            let fraction = ((i as f64 + (t / plan.duration.max(0.1)).min(1.0)) / passes).clamp(0.0, 1.0);
+                            let elapsed = started.elapsed().as_secs_f64();
+                            let eta = (fraction > 0.02).then(|| (elapsed / fraction * (1.0 - fraction)) as u64);
+                            let _ = self.app.emit("job-progress", JobProgress {
+                                id: job.id.clone(), stage: Stage::Exporting, part: (i + 1) as u8, fraction,
+                                downloaded: None, total: None, speed: None, eta, step: None,
+                            });
+                        }
+                    }
+                    _ = ctl.stop.notified() => {
+                        let _ = child.kill().await;
+                        let reason = ctl.reason.lock().ok().and_then(|r| *r).unwrap_or(Status::Paused);
+                        return Err(Outcome::Stopped(reason));
+                    }
+                }
+            }
+            let status = child.wait().await.map_err(|e| fail(e.into()))?;
+            if !status.success() {
+                let raw: String = errors.into_iter().collect::<Vec<_>>().join("\n");
+                return Err(Outcome::Failed { message: media::friendly_error(&raw), raw });
+            }
+        }
+        if !out.is_file() {
+            return Err(fail(AppError::Invalid("The export finished but the file is missing.".into())));
+        }
+        Ok(())
     }
 
     // ------------------------------------------------------------ public actions
@@ -982,6 +1130,7 @@ mod tests {
             options: DownloadOptions::default(),
             duration: None,
             tags: None,
+            export: None,
         }
     }
 

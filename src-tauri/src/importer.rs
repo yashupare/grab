@@ -113,6 +113,7 @@ pub fn build_requests(req: &ImportRequest) -> Vec<DownloadRequest> {
                 options: DownloadOptions::default(),
                 duration: Some(t.duration_ms as f64 / 1000.0),
                 tags: Some(tags),
+                export: None,
             }
         })
         .collect()

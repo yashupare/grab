@@ -41,7 +41,6 @@ const LABELS: Record<SettingsSection, string> = {
 const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: string }>> = {
   downloads: { milestone: "M6", items: ["File name pattern", "Speed limit"] },
   music: { milestone: "a later version", items: ["Normalise volume"] },
-  tools: { milestone: "M5", items: ["Hardware acceleration", "Default output folder and quality"] },
   spotify: { milestone: "M3", items: ["Connect your Spotify account (Premium) for playlists over 100 songs"] },
   updates: { milestone: "M6", items: ["Automatic updates for Grab itself"] },
   advanced: { milestone: "M1", items: ["Cookies for age-restricted videos", "Proxy", "Copy diagnostics", "Reset app"] },
@@ -372,6 +371,29 @@ function MusicSection({ s, save }: { s: Settings; save: (p: Partial<Settings>) =
   );
 }
 
+function ToolsSection({ s, save }: { s: Settings; save: (p: Partial<Settings>) => void }) {
+  const info = useQuery({ queryKey: ["tools-info", s.hardwareAccel], queryFn: api.toolsInfo, staleTime: 60_000 });
+  const found = info.data?.hardware ?? [];
+  return (
+    <Row
+      title="Hardware acceleration"
+      description={
+        info.isPending
+          ? "Checking your graphics card…"
+          : found.length
+            ? `Uses ${found[0]} to make Merge, Trim (precise) and Convert faster. Compress always uses the software encoder, which hits sizes exactly.`
+            : "No working hardware video encoder was found (NVIDIA, Intel or AMD), so Tools use the software encoder."
+      }
+    >
+      <Switch
+        label="Hardware acceleration"
+        checked={s.hardwareAccel && found.length > 0}
+        onChange={(hardwareAccel) => save({ hardwareAccel })}
+      />
+    </Row>
+  );
+}
+
 function AboutSection() {
   const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
   const tools = useQuery({ queryKey: ["tools"], queryFn: api.toolStatus, staleTime: 60_000 });
@@ -465,6 +487,7 @@ export function SettingsPage() {
           {section === "updates" && <UpdatesSection />}
           {section === "downloads" && s && <DownloadsSection s={s} save={(p) => update.mutate(p)} />}
           {section === "music" && s && <MusicSection s={s} save={(p) => update.mutate(p)} />}
+          {section === "tools" && s && <ToolsSection s={s} save={(p) => update.mutate(p)} />}
           {section === "about" && <AboutSection />}
 
           {planned && (

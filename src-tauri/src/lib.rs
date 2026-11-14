@@ -6,6 +6,7 @@ mod jobs;
 mod library;
 mod logging;
 mod matcher;
+mod media;
 mod music;
 mod playlists;
 mod settings;
@@ -85,6 +86,9 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     library.start();
     app.manage(library);
 
+    // Find a working hardware encoder now, so the first export doesn't wait for it.
+    tauri::async_runtime::spawn(media::detect());
+
     let sys = system::System::new();
     if let Err(e) = sys.setup(app.handle()) {
         tracing::warn!(error = %e, "tray unavailable");
@@ -159,6 +163,11 @@ pub fn run() {
             commands::autostart_get,
             commands::autostart_set,
             commands::quit_app,
+            commands::media_probe,
+            commands::media_thumbnail,
+            commands::compress_estimate,
+            commands::tools_info,
+            commands::export_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Grab");

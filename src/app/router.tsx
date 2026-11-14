@@ -6,6 +6,10 @@ import { ActivityPage, NotFoundPage, ToolsPage } from "../pages/PlaceholderPages
 import { MUSIC_TABS, MusicPage, type MusicTab } from "../pages/music/MusicPage";
 import { AlbumPage, ArtistPage, PlaylistPage } from "../pages/music/CollectionPages";
 import { VideosPage } from "../pages/VideosPage";
+import { MergeTool } from "../pages/tools/MergeTool";
+import { TrimTool } from "../pages/tools/TrimTool";
+import { CompressTool } from "../pages/tools/CompressTool";
+import { ConvertTool } from "../pages/tools/ConvertTool";
 import { VideoPlayerPage } from "../pages/VideoPlayerPage";
 import { SETTINGS_SECTIONS, SettingsPage, type SettingsSection } from "../pages/SettingsPage";
 import { ErrorPage } from "../pages/ErrorPage";
@@ -41,6 +45,16 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/videos", component: VideosPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/videos/$id", component: VideoPlayerPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tools", component: ToolsPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/tools/merge", component: MergeTool }),
+  ...(["trim", "compress", "convert"] as const).map((t) =>
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: `/tools/${t}`,
+      // ?file= opens a file right away (Videos → Open in Tools).
+      validateSearch: (s: Record<string, unknown>): { file?: string } => (str(s.file) ? { file: str(s.file) } : {}),
+      component: { trim: TrimTool, compress: CompressTool, convert: ConvertTool }[t],
+    }),
+  ),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings",

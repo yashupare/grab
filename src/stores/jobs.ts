@@ -38,7 +38,9 @@ export const useJobs = create<JobsState>()((set) => ({
     }),
   clearFinished: () =>
     set((s) => ({
-      jobs: Object.fromEntries(Object.entries(s.jobs).filter(([, j]) => j.status !== "done" && j.status !== "cancelled")),
+      jobs: Object.fromEntries(
+        Object.entries(s.jobs).filter(([, j]) => j.status !== "done" && j.status !== "cancelled"),
+      ),
     })),
 }));
 
@@ -56,14 +58,20 @@ export function useJobsSync() {
     const subs = [
       api.onJobUpdated((job) => {
         s.upsert(job);
-        if (job.status === "done" && job.kind === "video") queryClient.invalidateQueries({ queryKey: ["videos"] });
+        if (job.status === "done" && (job.kind === "video" || job.kind === "export"))
+          queryClient.invalidateQueries({ queryKey: ["videos"] });
       }),
       api.onJobProgress(s.progress),
       api.onJobRemoved(s.remove),
       api.onJobsCleared(s.clearFinished),
-      api.onYtdlpUpdated((r) => toast.info(`Downloader updated to ${r.after}. Downloads keep working when sites change.`)),
+      api.onYtdlpUpdated((r) =>
+        toast.info(`Downloader updated to ${r.after}. Downloads keep working when sites change.`),
+      ),
     ];
-    api.listJobs().then(s.setAll).catch(() => s.setAll([]));
+    api
+      .listJobs()
+      .then(s.setAll)
+      .catch(() => s.setAll([]));
     return () => {
       subs.forEach((p) => p.then((unlisten) => unlisten()));
     };

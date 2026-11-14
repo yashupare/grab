@@ -11,7 +11,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::{
     AppState,
     error::{AppError, AppResult},
-    importer, jobs, library, matcher, music, playlists,
+    importer, jobs, library, matcher, media, music, playlists,
     settings::{self, Settings},
     spotify,
     system, toolmgr,
@@ -362,4 +362,87 @@ pub async fn autostart_set(app: AppHandle, enabled: bool) -> AppResult<bool> {
 pub async fn quit_app(app: AppHandle) -> AppResult<()> {
     system::quit(&app);
     Ok(())
+}
+
+// ---------------------------------------------------------------- Tools
+
+/// Read files the user picked (duration, size, streams) and allow them in the preview player.
+#[tauri::command]
+pub async fn media_probe(app: AppHandle, paths: Vec<String>) -> AppResult<Vec<media::Probe>> {
+    if paths.len() > 200 {
+        return Err(AppError::Invalid("Pick at most 200 files.".into()));
+    }
+    let mut out = Vec::new();
+    for p in &paths {
+        let probe = media::probe(p).await?;
+        let _ = app.asset_protocol_scope().allow_file(p);
+        out.push(probe);
+    }
+    Ok(out)
+}
+
+/// A small frame from a video for clip lists (an image path).
+#[tauri::command]
+pub async fn media_thumbnail(app: AppHandle, path: String, at: f64) -> AppResult<String> {
+    let cache = app.path().app_local_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("Grab")).join("thumbs");
+    let out = media::thumbnail(&path, at.max(0.0), &cache).await?;
+    let _ = app.asset_protocol_scope().allow_file(&out);
+    Ok(out.display().to_string())
+}
+
+#[tauri::command]
+pub async fn compress_estimate(path: String, target_mb: f64) -> AppResult<media::CompressEstimate> {
+    if !(target_mb.is_finite() && target_mb > 0.0) {
+        return Err(AppError::Invalid("Pick a size.".into()));
+    }
+    let p = media::probe(&path).await?;
+    if p.video.is_none() {
+        return Err(AppError::Invalid("Compress works on videos. For audio, use Convert.".into()));
+    }
+    Ok(media::compress_estimate(&p, target_mb))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsInfo {
+    /// Working hardware encoders, e.g. ["Intel Quick Sync"].
+    hardware: Vec<String>,
+    /// What exports use now (follows Settings → Tools).
+    using: String,
+    video_dir: String,
+    music_dir: String,
+}
+
+#[tauri::command]
+pub async fn tools_info(state: State<'_, AppState>) -> AppResult<ToolsInfo> {
+    let s = settings::load(&state.db, &state.default_settings)?;
+    let hardware = media::detect().await;
+    let using = media::pick_encoder(s.hardware_accel).await;
+    Ok(ToolsInfo {
+        hardware: hardware.iter().map(|e| e.label().to_string()).collect(),
+        using: using.label().into(),
+        video_dir: s.video_dir,
+        music_dir: s.music_dir,
+    })
+}
+
+/// Queue a Tools export; progress shows in Activity like a download.
+#[tauri::command]
+pub async fn export_start(jobs: Jobs<'_>, request: media::ExportRequest) -> AppResult<jobs::Job> {
+    request.validate()?;
+    let first = request.tool.inputs().first().map(|s| s.to_string()).unwrap_or_default();
+    jobs.enqueue(jobs::DownloadRequest {
+        url: first,
+        title: format!("{} · {}", request.tool.verb(), request.name.trim()),
+        thumbnail: None,
+        kind: jobs::Kind::Export,
+        quality: "best".into(),
+        audio_format: settings::AudioFormat::Opus,
+        group_id: None,
+        group_title: None,
+        options: Default::default(),
+        duration: None,
+        tags: None,
+        export: Some(request),
+    })
 }

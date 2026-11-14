@@ -32,6 +32,11 @@ pub struct VideoItem {
     pub url: String,
 }
 
+/// Exports that are videos (not audio or GIFs) belong in the Videos library.
+fn is_video_file(p: Option<&str>) -> bool {
+    p.and_then(|p| Path::new(p).extension()).and_then(|e| e.to_str()).is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm" | "mov"))
+}
+
 /// Allow the player to read the download folders (called at startup and when settings change).
 pub fn allow_folders(app: &AppHandle, s: &Settings) {
     let scope = app.asset_protocol_scope();
@@ -73,7 +78,7 @@ pub fn videos(app: &AppHandle, db: &Db) -> AppResult<Vec<VideoItem>> {
     let scope = app.asset_protocol_scope();
     let items = jobs::list(db)?
         .into_iter()
-        .filter(|j| j.kind == Kind::Video && j.status == Status::Done)
+        .filter(|j| j.status == Status::Done && (j.kind == Kind::Video || (j.kind == Kind::Export && is_video_file(j.file_path.as_deref()))))
         .filter_map(|j| {
             let path = j.file_path.clone()?;
             if !Path::new(&path).is_file() {

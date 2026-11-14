@@ -23,6 +23,8 @@ export interface Settings {
   subtitleLangs: string[];
   /** Seconds of overlap between songs, 0–12. */
   crossfade: number;
+  /** Use the graphics card's encoder in Tools. */
+  hardwareAccel: boolean;
 }
 
 export interface DownloadOptions {
@@ -99,7 +101,7 @@ export interface MediaInfo {
 }
 
 // ---- download queue (Rust: jobs.rs)
-export type JobKind = "video" | "audio";
+export type JobKind = "video" | "audio" | "export";
 export type JobStatus = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
 export interface DownloadRequest {
@@ -115,6 +117,8 @@ export interface DownloadRequest {
   options?: Partial<DownloadOptions>;
   /** Seconds, when known (shown in the Videos library). */
   duration?: number | null;
+  /** Tools exports only. */
+  export?: ExportRequest;
 }
 
 // ---- library (Rust: library.rs)
@@ -262,6 +266,38 @@ export interface PlaylistDetail extends PlaylistSummary {
   missing: number;
 }
 
+// ---- Tools (Rust: media.rs)
+export interface Probe {
+  path: string;
+  name: string;
+  duration: number;
+  size: number;
+  video: { codec: string; width: number; height: number; fps: number; pixFmt: string } | null;
+  audio: { codec: string; sampleRate: number; channels: number } | null;
+}
+export type MergeSize = "first" | "p1080" | "p720";
+export type ConvertTo = "mp4" | "mkv" | "webm" | "gif" | "mp3" | "m4a" | "opus" | "audio";
+export type ToolSpec =
+  | { tool: "merge"; inputs: string[]; size: MergeSize }
+  | { tool: "trim"; input: string; start: number; end: number; precise: boolean }
+  | { tool: "compress"; input: string; targetMb: number }
+  | { tool: "convert"; input: string; to: ConvertTo };
+export type ExportRequest = ToolSpec & { outputDir: string; name: string };
+export interface CompressEstimate {
+  videoKbps: number;
+  audioKbps: number;
+  height: number;
+  quality: "great" | "good" | "ok" | "low";
+  alreadySmaller: boolean;
+  tooSmall: boolean;
+}
+export interface ToolsInfo {
+  hardware: string[];
+  using: string;
+  videoDir: string;
+  musicDir: string;
+}
+
 // ---- Windows integration (Rust: system.rs)
 export interface NowPlayingInfo {
   title: string;
@@ -295,7 +331,7 @@ export interface Job {
 
 export interface JobProgress {
   id: string;
-  stage: "downloading" | "processing";
+  stage: "downloading" | "processing" | "exporting";
   part: number;
   fraction: number;
   downloaded: number | null;
@@ -373,6 +409,11 @@ export const api = {
   autostartGet: () => call<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => call<boolean>("autostart_set", { enabled }),
   quitApp: () => call<void>("quit_app"),
+  mediaProbe: (paths: string[]) => call<Probe[]>("media_probe", { paths }),
+  mediaThumbnail: (path: string, at: number) => call<string>("media_thumbnail", { path, at }),
+  compressEstimate: (path: string, targetMb: number) => call<CompressEstimate>("compress_estimate", { path, targetMb }),
+  toolsInfo: () => call<ToolsInfo>("tools_info"),
+  exportStart: (request: ExportRequest) => call<Job>("export_start", { request }),
   playlists: () => call<PlaylistSummary[]>("playlists_list"),
   playlist: (id: string) => call<PlaylistDetail>("playlist_get", { id }),
   playlistCreate: (name: string, trackIds: number[] = []) => call<string>("playlist_create", { name, trackIds }),

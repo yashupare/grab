@@ -3,7 +3,7 @@ import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { pauseMusic } from "../player/engine";
-import { AlertTriangle, ArrowLeft, ExternalLink, FolderOpen } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, FolderOpen, Scissors, Shrink, Repeat2 } from "lucide-react";
 import { api } from "../lib/ipc";
 import { formatBytes, formatDuration } from "../lib/format";
 import { errorMessage } from "../hooks/useSettings";
@@ -121,6 +121,20 @@ export function VideoPlayerPage() {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
+          {/* Open in Tools */}
+          {(
+            [
+              ["/tools/trim", "Trim", Scissors],
+              ["/tools/compress", "Compress", Shrink],
+              ["/tools/convert", "Convert", Repeat2],
+            ] as const
+          ).map(([to, label, Icon]) => (
+            <Link key={to} to={to} search={{ file: video.path }}>
+              <Button variant="ghost" icon={<Icon />}>
+                {label}
+              </Button>
+            </Link>
+          ))}
           <Button
             icon={<FolderOpen />}
             onClick={() => api.revealJobFile(video.jobId).catch((e) => toast.error(errorMessage(e)))}

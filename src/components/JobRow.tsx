@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { AudioLines, Clapperboard, FolderOpen, Pause, Play, RotateCw, Trash2, X } from "lucide-react";
+import { AudioLines, Clapperboard, Wand2, FolderOpen, Pause, Play, RotateCw, Trash2, X } from "lucide-react";
 import { api, type Job, type JobProgress } from "../lib/ipc";
 import { formatBytes, formatEta, formatRelative, formatSpeed } from "../lib/format";
 import { errorMessage } from "../hooks/useSettings";
@@ -38,6 +38,10 @@ function statusLine(job: Job, live: JobProgress | undefined): { text: string; to
     case "running": {
       if (!live) return { text: "Starting…" };
       if (live.stage === "processing") return { text: `${STEP_LABELS[live.step ?? ""] ?? "Finishing"}…` };
+      if (live.stage === "exporting")
+        return {
+          text: [`Exporting · ${Math.floor(live.fraction * 100)}%`, formatEta(live.eta)].filter(Boolean).join(" · "),
+        };
       const what = job.kind === "audio" ? "Audio" : live.part >= 2 ? "Audio" : "Video";
       return {
         text: [`${what} · ${Math.floor(live.fraction * 100)}%`, formatSpeed(live.speed), formatEta(live.eta)]
@@ -66,7 +70,7 @@ export const JobRow = memo(function JobRow({
   const { text, tone } = statusLine(job, live);
   const fraction = job.status === "running" ? (live?.stage === "processing" ? 1 : (live?.fraction ?? 0)) : job.progress;
   const showBar = job.status === "running" || job.status === "paused";
-  const Fallback = job.kind === "audio" ? AudioLines : Clapperboard;
+  const Fallback = job.kind === "audio" ? AudioLines : job.kind === "export" ? Wand2 : Clapperboard;
 
   const actions: ReactNode[] = [];
   if (job.status === "running" || job.status === "queued") {

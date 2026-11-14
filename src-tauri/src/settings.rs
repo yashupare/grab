@@ -62,6 +62,8 @@ pub struct Settings {
     pub subtitle_langs: Vec<String>,
     /// Seconds songs overlap in the music player (0 = off, up to 12).
     pub crossfade: u8,
+    /// Use the graphics card's video encoder in Tools when one works (Settings → Tools).
+    pub hardware_accel: bool,
 }
 
 impl Default for Settings {
@@ -80,6 +82,7 @@ impl Default for Settings {
             sponsorblock: SponsorBlock::Off,
             subtitle_langs: Vec::new(),
             crossfade: 0,
+            hardware_accel: true,
         }
     }
 }

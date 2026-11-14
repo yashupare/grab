@@ -1,15 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Tabs } from "radix-ui";
-import {
-  ArrowDownToLine,
-  CheckCircle2,
-  FileSearch,
-  Layers,
-  Repeat2,
-  Scissors,
-  Shrink,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowDownToLine, CheckCircle2, FileSearch, Layers, Repeat2, Scissors, Shrink } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
@@ -100,35 +91,37 @@ export function ActivityPage() {
   );
 }
 
-const TOOLS: { name: string; description: string; icon: LucideIcon }[] = [
-  { name: "Merge", description: "Join several clips into one video", icon: Layers },
-  { name: "Trim", description: "Keep only the part you need", icon: Scissors },
-  { name: "Compress", description: "Shrink to a size, like 25 MB for WhatsApp", icon: Shrink },
-  { name: "Convert", description: "Change format or extract the audio", icon: Repeat2 },
-];
+const TOOLS = [
+  { to: "/tools/merge", name: "Merge", description: "Join several clips into one video", icon: Layers },
+  { to: "/tools/trim", name: "Trim", description: "Keep only the part you need", icon: Scissors },
+  { to: "/tools/compress", name: "Compress", description: "Shrink to a size, like 16 MB for WhatsApp", icon: Shrink },
+  { to: "/tools/convert", name: "Convert", description: "Change format or extract the audio", icon: Repeat2 },
+] as const;
 
 export function ToolsPage() {
   return (
     <>
-      <PageHeader title="Tools" subtitle="Edit videos without uploading anything" />
+      <PageHeader title="Tools" subtitle="Edit videos on this PC. Nothing is uploaded." />
       <div className="grid grid-cols-2 gap-4">
-        {TOOLS.map(({ name, description, icon: Icon }) => (
-          <div key={name} className="flex items-start gap-4 rounded-lg border border-line bg-surface-1 p-5 opacity-80">
+        {TOOLS.map(({ to, name, description, icon: Icon }) => (
+          <Link
+            key={name}
+            to={to}
+            className="group flex items-start gap-4 rounded-lg border border-line bg-surface-1 p-5 transition-colors hover:border-muted hover:bg-surface-2"
+          >
             <div className="grid size-11 shrink-0 place-items-center rounded-md bg-accent-soft text-accent">
               <Icon className="size-5" aria-hidden />
             </div>
             <div>
-              <div className="flex items-center gap-2 font-semibold">
-                {name}
-                <span className="rounded-full bg-surface-3 px-2 py-px text-[11px] font-medium text-muted">
-                  Coming in M5
-                </span>
-              </div>
+              <div className="font-semibold group-hover:underline">{name}</div>
               <p className="mt-1 text-muted">{description}</p>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
+      <p className="mt-4 text-[13px] text-faint">
+        Tip: drop files anywhere on the window once a tool is open. Exports run in Activity, so you can keep working.
+      </p>
     </>
   );
 }
