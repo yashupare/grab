@@ -14,7 +14,7 @@ use crate::{
     importer, jobs, library, matcher, media, music, playlists,
     settings::{self, Settings},
     spotify,
-    system, toolmgr,
+    system, toolmgr, updater,
     tools::{self, ToolStatus},
     ytdlp,
 };
@@ -445,4 +445,21 @@ pub async fn export_start(jobs: Jobs<'_>, request: media::ExportRequest) -> AppR
         tags: None,
         export: Some(request),
     })
+}
+
+// ---------------------------------------------------------------- updates for Grab itself
+
+/// Settings → Updates → "Check now". None = up to date.
+#[tauri::command]
+pub async fn app_update_check(app: AppHandle) -> AppResult<Option<updater::UpdateInfo>> {
+    updater::check(&app).await
+}
+
+/// Download and install the update found by the last check. Grab closes and restarts.
+#[tauri::command]
+pub async fn app_update_install(app: AppHandle, jobs: Jobs<'_>) -> AppResult<()> {
+    if jobs.has_running() {
+        return Err(AppError::Invalid("Wait for the downloads and exports in Activity to finish (or pause them), then install.".into()));
+    }
+    updater::install(&app).await
 }

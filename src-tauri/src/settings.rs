@@ -64,6 +64,10 @@ pub struct Settings {
     pub crossfade: u8,
     /// Use the graphics card's video encoder in Tools when one works (Settings → Tools).
     pub hardware_accel: bool,
+    /// Check GitHub Releases for a new Grab once a day (Settings → Updates).
+    pub auto_update: bool,
+    /// The first-run welcome was finished or skipped.
+    pub welcomed: bool,
 }
 
 impl Default for Settings {
@@ -83,6 +87,8 @@ impl Default for Settings {
             subtitle_langs: Vec::new(),
             crossfade: 0,
             hardware_accel: true,
+            auto_update: true,
+            welcomed: false,
         }
     }
 }

@@ -13,6 +13,30 @@ import { useUi } from "../stores/ui";
 import { errorMessage, useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { api, type AudioFormat, type Settings, type SponsorBlock, type Theme, type VideoQuality } from "../lib/ipc";
 import { cn } from "../lib/cn";
+import { useAppUpdate, useCheckForUpdate, useInstallUpdate } from "../hooks/useAppUpdate";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+/** Open-source parts Grab ships or downloads, with their licences. */
+const LICENCES: { name: string; licence: string; url: string; note?: string }[] = [
+  { name: "yt-dlp", licence: "Unlicense", url: "https://github.com/yt-dlp/yt-dlp", note: "downloads media" },
+  {
+    name: "FFmpeg",
+    licence: "GPL v3 (gyan.dev essentials build)",
+    url: "https://ffmpeg.org/legal.html",
+    note: "video and audio processing",
+  },
+  { name: "aria2", licence: "GPL v2", url: "https://github.com/aria2/aria2", note: "faster downloads" },
+  {
+    name: "Node.js",
+    licence: "MIT",
+    url: "https://github.com/nodejs/node/blob/main/LICENSE",
+    note: "YouTube playback challenges",
+  },
+  { name: "Tauri", licence: "MIT / Apache-2.0", url: "https://tauri.app" },
+  { name: "React, TanStack, Radix UI, Lucide", licence: "MIT / ISC", url: "https://github.com/yashupare/grab" },
+  { name: "lofty, rusqlite, souvlaki, notify", licence: "MIT / Apache-2.0", url: "https://github.com/yashupare/grab" },
+  { name: "Inter, JetBrains Mono", licence: "SIL Open Font License", url: "https://github.com/rsms/inter" },
+];
 
 export const SETTINGS_SECTIONS = [
   "general",
@@ -42,7 +66,6 @@ const PLANNED: Partial<Record<SettingsSection, { items: string[]; milestone: str
   downloads: { milestone: "M6", items: ["File name pattern", "Speed limit"] },
   music: { milestone: "a later version", items: ["Normalise volume"] },
   spotify: { milestone: "M3", items: ["Connect your Spotify account (Premium) for playlists over 100 songs"] },
-  updates: { milestone: "M6", items: ["Automatic updates for Grab itself"] },
   advanced: { milestone: "M1", items: ["Cookies for age-restricted videos", "Proxy", "Copy diagnostics", "Reset app"] },
 };
 
@@ -151,6 +174,56 @@ function GeneralSection({ s, save }: { s?: Settings; save: (p: Partial<Settings>
           />
         </Row>
       )}
+    </>
+  );
+}
+
+function GrabUpdateRow({ s, save }: { s: Settings; save: (p: Partial<Settings>) => void }) {
+  const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
+  const available = useAppUpdate().data;
+  const check = useCheckForUpdate();
+  const { install, progress } = useInstallUpdate();
+  return (
+    <>
+      <Row
+        title="Grab"
+        description={
+          available ? (
+            <>
+              <span className="font-medium text-accent">Version {available.version} is ready to install.</span> Grab
+              closes, updates and reopens; downloads in progress should finish first.
+              {available.notes && (
+                <span className="selectable mt-1 block whitespace-pre-line text-muted">{available.notes}</span>
+              )}
+            </>
+          ) : (
+            "Updates come from GitHub and are checked for a valid signature before installing."
+          )
+        }
+      >
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="font-mono text-[13px] text-muted">v{info.data?.version ?? "…"}</span>
+          {available ? (
+            <Button size="sm" variant="primary" loading={install.isPending} onClick={() => install.mutate()}>
+              {progress != null && progress > 0 ? `Downloading ${Math.round(progress * 100)}%` : "Install and restart"}
+            </Button>
+          ) : (
+            <Button size="sm" icon={<RefreshCw />} loading={check.isPending} onClick={() => check.mutate()}>
+              Check now
+            </Button>
+          )}
+        </div>
+      </Row>
+      <Row
+        title="Update Grab automatically"
+        description="Checks once a day and lets you know when a new version is ready. Nothing installs without your OK."
+      >
+        <Switch
+          label="Update Grab automatically"
+          checked={s.autoUpdate}
+          onChange={(autoUpdate) => save({ autoUpdate })}
+        />
+      </Row>
     </>
   );
 }
@@ -399,8 +472,17 @@ function AboutSection() {
   const tools = useQuery({ queryKey: ["tools"], queryFn: api.toolStatus, staleTime: 60_000 });
   return (
     <>
-      <Row title="Grab" description="Download, play and edit your media.">
-        <span className="font-mono text-[13px] text-muted">v{info.data?.version ?? "…"}</span>
+      <Row title="Grab" description="Download, play and edit your media. Free and open source.">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[13px] text-muted">v{info.data?.version ?? "…"}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => openUrl("https://github.com/yashupare/grab").catch(() => {})}
+          >
+            Source on GitHub
+          </Button>
+        </div>
       </Row>
       {info.data && (
         <>
@@ -447,6 +529,23 @@ function AboutSection() {
           })}
         </ul>
       </div>
+      <div className="border-t border-line py-4">
+        <div className="mb-3 font-medium">Open-source licences</div>
+        <ul className="grid gap-1.5 text-[13px]">
+          {LICENCES.map((l) => (
+            <li key={l.name} className="flex items-baseline justify-between gap-4">
+              <button className="text-left font-medium hover:underline" onClick={() => openUrl(l.url).catch(() => {})}>
+                {l.name}
+                {l.note && <span className="font-normal text-muted"> · {l.note}</span>}
+              </button>
+              <span className="shrink-0 text-muted">{l.licence}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-[12.5px] text-faint">
+          Download only what you have the right to. Grab doesn't bypass copy protection (DRM).
+        </p>
+      </div>
     </>
   );
 }
@@ -484,7 +583,12 @@ export function SettingsPage() {
           {update.error && <p className="py-3 text-danger">{errorMessage(update.error)}</p>}
 
           {section === "general" && <GeneralSection s={s} save={(p) => update.mutate(p)} />}
-          {section === "updates" && <UpdatesSection />}
+          {section === "updates" && (
+            <>
+              {s && <GrabUpdateRow s={s} save={(p) => update.mutate(p)} />}
+              <UpdatesSection />
+            </>
+          )}
           {section === "downloads" && s && <DownloadsSection s={s} save={(p) => update.mutate(p)} />}
           {section === "music" && s && <MusicSection s={s} save={(p) => update.mutate(p)} />}
           {section === "tools" && s && <ToolsSection s={s} save={(p) => update.mutate(p)} />}

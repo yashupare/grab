@@ -25,6 +25,17 @@ export interface Settings {
   crossfade: number;
   /** Use the graphics card's encoder in Tools. */
   hardwareAccel: boolean;
+  /** Check for new Grab versions once a day. */
+  autoUpdate: boolean;
+  /** First-run welcome finished or skipped. */
+  welcomed: boolean;
+}
+
+export interface AppUpdate {
+  version: string;
+  current: string;
+  notes: string | null;
+  date: string | null;
 }
 
 export interface DownloadOptions {
@@ -409,6 +420,11 @@ export const api = {
   autostartGet: () => call<boolean>("autostart_get"),
   autostartSet: (enabled: boolean) => call<boolean>("autostart_set", { enabled }),
   quitApp: () => call<void>("quit_app"),
+  appUpdateCheck: () => call<AppUpdate | null>("app_update_check"),
+  appUpdateInstall: () => call<void>("app_update_install"),
+  onAppUpdateAvailable: (fn: (u: AppUpdate) => void) => on<AppUpdate>("app-update-available", fn),
+  onAppUpdateProgress: (fn: (p: { received: number; total: number | null }) => void) =>
+    on<{ received: number; total: number | null }>("app-update-progress", fn),
   mediaProbe: (paths: string[]) => call<Probe[]>("media_probe", { paths }),
   mediaThumbnail: (path: string, at: number) => call<string>("media_thumbnail", { path, at }),
   compressEstimate: (path: string, targetMb: number) => call<CompressEstimate>("compress_estimate", { path, targetMb }),

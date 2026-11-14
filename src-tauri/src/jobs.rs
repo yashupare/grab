@@ -1098,6 +1098,11 @@ impl Manager {
         Ok(())
     }
 
+    /// Something is downloading or exporting right now.
+    pub fn has_running(&self) -> bool {
+        !self.running_ids().is_empty()
+    }
+
     pub fn clear_finished(&self) -> AppResult<usize> {
         let n = self.state().db.with(|c| Ok(c.execute("DELETE FROM jobs WHERE status IN ('done', 'cancelled')", [])?))?;
         let _ = self.app.emit("jobs-cleared", ());

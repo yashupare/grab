@@ -45,6 +45,8 @@ souvlaki = "=0.9.3"
 tauri-plugin-autostart = "=2.7.0"
 # A second launch focuses the running Grab (which may be hidden in the tray)
 tauri-plugin-single-instance = "=2.5.5"
+# Updates for Grab itself from GitHub Releases (signed)
+tauri-plugin-updater = "=2.14.1"
 tokio = { version = "1", features = ["fs", "io-util", "process", "time", "sync", "macros"] }
 
 
