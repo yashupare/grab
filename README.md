@@ -74,3 +74,8 @@ back it up. The public key is in `src-tauri/tauri.conf.json`.
   Rust crates are pinned the same way.
 - Database: migrations in `src-tauri/src/db.rs` are append-only.
 - Tools: only pin releases at least 7 days old, with checksums from the publisher.
+
+## Licence
+
+[MIT](LICENSE) © Yash Upare. Grab downloads and runs yt-dlp, FFmpeg, aria2 and Node.js as separate
+programs; each keeps its own licence (listed in Settings → About).
